@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+pnpm-lock.yaml
+yarn-lock
+package-lock.lock
+
+# Production
+dist/
+build/
+.next/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database
+*.sqlite
+prisma/
+sqlite/
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+*.8 coverage/
+
+# Typescript
+*.tsbuildinfo
+.tumi/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Puppeteer / Rendering
+*.pdf
+*.png
+*.screenshot*
+
+# ZIP outputs
+*.zip
+outputs/
+
+# BullMQ Redis
+redis-data/
