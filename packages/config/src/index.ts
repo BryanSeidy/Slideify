@@ -1,0 +1,1 @@
+export { config, isMockProvider } from './config';
