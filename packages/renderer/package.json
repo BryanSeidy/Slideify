@@ -10,8 +10,8 @@
     "test": "npx jest --testPathPattern=tests"
   },
   "dependencies": {
-    "@slideify/shared": "0.0.1",
-    "@slideify/config": "0.0.1",
+    "@slideify/shared": "workspace:",
+    "@slideify/config": "workspace:",
     "puppeteer": "^22.0.0"
   },
   "devDependencies": {

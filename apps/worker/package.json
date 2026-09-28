@@ -10,14 +10,13 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@slideify/llm": "0.0.1",
-    "@slideify/renderer": "0.0.1",
-    "@slideify/config": "0.0.1",
-    "@slideify/shared": "0.0.1",
-    "@slideify/schema": "0.0.1",
-    "@prisma/client": "^5.21.0",
     "bullmq": "^5.23.11",
     "ioredis": "^5.4.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "@slideify/shared": "workspace:",
+    "@slideify/llm": "workspace:",
+    "@slideify/renderer": "workspace:",
+    "@slideify/config": "workspace:",
+    "@slideify/schema": "workspace:"
   }
 }

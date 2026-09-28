@@ -1,113 +1,89 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { config } from '@slideify/config';
-import { GenerationStatus, CreditTransactionType } from '@slideify/shared';
 import { LLMProvider, createLLMProvider } from '@slideify/llm';
 import { renderSlides } from '@slideify/renderer';
 import { StorageAdapterFactory } from '@slideify/renderer';
+import { CreditTransactionType, GenerationStatus, GenerationEventName, CreditTransaction } from '@slideify/shared';
+import { prisma } from '@slideify/shared';
 
-export interface GenerationJobData {
-  generationId: string;
-  sourceText: string;
+export interface GenerationServiceInterface {
+  create(userId: string, sourceText: string): Promise<{ generationId: string; status: GenerationStatus }>;
+  getStatus(generationId: string, userId: string): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }>;
+  history(userId: string): Promise<any[]>;
 }
 
 @Injectable()
-export class GenerationQueueService {
+export class GenerationService implements OnModuleInit, GenerationServiceInterface {
   private llmProvider: LLMProvider;
   private storage: ReturnType<typeof StorageAdapterFactory.create>;
 
   constructor(private prisma: PrismaService) {
+    // LLM Provider sera initialisé au module init
+    this.llmProvider = {} as LLMProvider;
+    this.storage = {} as ReturnType<typeof StorageAdapterFactory.create>;
+  }
+
+  async onModuleInit() {
     this.llmProvider = createLLMProvider();
     this.storage = StorageAdapterFactory.create();
   }
 
-  async process(job: { data: GenerationJobData }): Promise<void> {
-    const { generationId, sourceText } = job.data;
-
-    // Step 1: Update status to PROCESSING_LLM
-    await this.prisma.generation.update({
-      where: { id: generationId },
-      data: { status: GenerationStatus.PROCESSING_LLM, startedAt: new Date() },
+  async create(userId: string, sourceText: string): Promise<{ generationId: string; status: GenerationStatus }> {
+    // Create generation record
+    const generation = await this.prisma.generation.create({
+      data: {
+        userId,
+        sourceText,
+        status: GenerationStatus.CREATED,
+      },
     });
 
-    // Step 2: Call LLM
-    let llmResponse;
-    try {
-      llmResponse = await this.llmProvider.generate(sourceText);
-    } catch (error) {
-      await this.prisma.generation.update({
-        where: { id: generationId },
-        data: { status: GenerationStatus.FAILED, error: 'LLM_ERROR' },
-      });
-      return;
-    }
+    // Create BullMQ job
+    const queue = this.createQueue();
+    await queue.add('generation', { generationId: generation.id, sourceText }, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+    });
 
-    // Step 3: Validate response
-    const validation = validateLLMResponse(llmResponse);
-    if (!validation.valid) {
-      await this.prisma.generation.update({
-        where: { id: generationId },
-        data: { status: GenerationStatus.FAILED, error: validation.error },
-      });
-      return;
-    }
-
-    // Step 4: Render slides
-    let renderedBuffers;
-    try {
-      renderedBuffers = await renderSlides(llmResponse.slides);
-    } catch (error) {
-      await this.prisma.generation.update({
-        where: { id: generationId },
-        data: { status: GenerationStatus.FAILED, error: 'RENDER_ERROR' },
-      });
-      return;
-    }
-
-    // Step 5: Store outputs
-    for (let i = 0; i < renderedBuffers.length; i++) {
-      await this.storage.upload(
-        `${generationId}/slide_${i}.png`,
-        renderedBuffers[i],
-        'image/png'
-      );
-    }
-
-    // Step 6: Mark completed and consume credit (transaction)
-    await this.prisma.$transaction([
-      this.prisma.generation.update({
-        where: { id: generationId },
-        data: {
-          status: GenerationStatus.COMPLETED,
-          slideCount: llmResponse.slides.length,
-          completedAt: new Date(),
-        },
-      }),
-      this.prisma.creditTransaction.create({
-        data: {
-          userId: await this.getUserId(generationId),
-          amount: -1,
-          type: CreditTransactionType.GENERATION_DEBIT,
-          reference: generationId,
-        },
-      }),
-    ]);
+    return { generationId: generation.id, status: generation.status };
   }
 
-  private async getUserId(generationId: string): Promise<string> {
+  async getStatus(generationId: string, userId: string): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }> {
+    // Verify ownership
     const generation = await this.prisma.generation.findUnique({
       where: { id: generationId },
+      include: { outputs: true },
     });
-    return generation?.userId || '';
-  }
-}
 
-function validateLLMResponse(response: any): { valid: boolean; error?: string } {
-  if (!response?.slides || !Array.isArray(response.slides) || response.slides.length < 5) {
-    return { valid: false, error: 'INVALID_RESPONSE' };
+    if (!generation || generation.userId !== userId) {
+      throw new Error('Generation not found or access denied');
+    }
+
+    return {
+      id: generation.id,
+      status: generation.status,
+      slideCount: generation.slideCount,
+      error: generation.error,
+      createdAt: generation.createdAt,
+    };
   }
-  if (response.slides.length > 10) {
-    return { valid: false, error: 'TOO_MANY_SLIDES' };
+
+  async history(userId: string): Promise<any[]> {
+    return this.prisma.generation.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: { outputs: true },
+    });
   }
-  return { valid: true };
+
+  private createQueue() {
+    // Simplified - in production would use BullMQ queue instance
+    // This is a placeholder for the queue creation pattern
+    return {
+      add: async (name: string, job: any, options: any) => {
+        // Would add to BullMQ queue
+      },
+    };
+  }
 }

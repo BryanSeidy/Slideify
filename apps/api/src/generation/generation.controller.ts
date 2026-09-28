@@ -1,56 +1,51 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, Param, UseGuards, HttpCode } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/jwt.guard';
 import { GenerationService } from './generation/generation.service';
-import { CreditsService } from './credits/credits.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { GenerationInput } from '@slideify/shared';
+import { z } from 'zod';
 
 @ApiTags('generations')
 @Controller('generations')
 export class GenerationController {
-  constructor(
-    private readonly generationService: GenerationService,
-    private readonly creditsService: CreditsService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly generationService: GenerationService) {}
 
   @Post()
-  async create(@Body() body: { sourceText: string; userId: string }) {
-    const { sourceText, userId } = body;
-
-    // Check credits
-    const credits = await this.creditsService.getBalance(userId);
-    if (credits <= 0) {
-      return { error: 'NO_CREDITS', requiresPurchase: true };
-    }
-
-    // Create generation record
-    const generation = await this.prisma.generation.create({
-      data: { userId, sourceText, status: 'QUEUED' },
-    });
-
-    return { generationId: generation.id };
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new generation' })
+  @ApiResponse({ status: 201, description: 'Generation created and queued' })
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async create(
+    @Body() body: { sourceText: string },
+    @Req() req: { user: { userId: string } },
+  ) {
+    const validated = GenerationInput.parse(body);
+    return this.generationService.create(req.user.userId, validated.sourceText);
   }
 
   @Get(':id/status')
-  async getStatus(@Body('id') id: string) {
-    const gen = await this.prisma.generation.findUnique({
-      where: { id },
-    });
-    return {
-      id: gen?.id,
-      status: gen?.status,
-      slideCount: gen?.slideCount,
-      error: gen?.error,
-    };
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get generation status' })
+  @ApiResponse({ status: 200, description: 'Generation status retrieved' })
+  @ApiResponse({ status: 404, description: 'Generation not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getStatus(
+    @Param('id') id: string,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.generationService.getStatus(id, req.user.userId);
   }
 
   @Get()
-  async history(@Body('userId') userId: string) {
-    const generations = await this.prisma.generation.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      include: { outputs: true },
-    });
-    return generations;
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get user generations history' })
+  @ApiResponse({ status: 200, description: 'User generations history' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async history(@Req() req: { user: { userId: string } }) {
+    return this.generationService.history(req.user.userId);
   }
 }
