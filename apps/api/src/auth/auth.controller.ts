@@ -1,17 +1,12 @@
-import { Controller, Get, Post, Body, UseGuards, HttpCode } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { AuthService } from './auth/auth.service';
-import { GenerationService } from './generation/generation.service';
-import { CreditsService } from './credits/credits.service';
-import { config } from '@slideify/config';
+import { Controller, Get, Post, Body, UseGuards, HttpCode, Req } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { AuthService } from './auth.service';
+import { JwtAuthGuard } from '../auth/jwt.guard';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly creditsService: CreditsService,
-  ) {}
+  constructor(private readonly authService: AuthService) {}
 
   @Post('magic-link')
   @HttpCode(202)
@@ -20,9 +15,12 @@ export class AuthController {
     return { message: 'Lien envoyé', userId: result.userId };
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('me')
-  async getMe(@Body('userId') userId: string) {
-    const credits = await this.creditsService.getBalance(userId);
-    return { credits };
+  @ApiBearerAuth()
+  @ApiResponse({ status: 200, description: 'User info retrieved successfully' })
+  async getMe(@Req() req: { user: { userId: string; email: string; credits: number } }) {
+    const { userId, email, credits } = req.user;
+    return { userId, email, credits };
   }
 }

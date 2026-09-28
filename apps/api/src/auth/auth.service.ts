@@ -1,21 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtService } from '@nestjs/jwt';
 import { config } from '@slideify/config';
 
 @Injectable()
 export class AuthService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
 
   async authenticateWithMagicLink(email: string): Promise<{ userId: string; email: string; credits: number }> {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (user) {
-      const credit = await this.prisma.creditTransaction.findFirst({
-        where: { userId: user.id, type: 'MANUAL_GRANT' },
-        orderBy: { createdAt: 'desc' },
+      const balance = await this.prisma.creditTransaction.aggregate({
+        _sum: { amount: true },
+        where: { userId: user.id },
       });
-      const balance = credit ? credit.amount : 0;
-      return { userId: user.id, email: user.email, credits: balance };
+      return { userId: user.id, email: user.email, credits: balance._sum.amount ?? 0 };
     }
 
     // New user — create with free credits via append-only ledger
@@ -37,5 +40,24 @@ export class AuthService {
     });
 
     return result;
+  }
+
+  async login(userId: string, email: string): Promise<{ accessToken: string; userId: string; email: string; credits: number }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    const balance = await this.prisma.creditTransaction.aggregate({
+      _sum: { amount: true },
+      where: { userId: user.id },
+    });
+
+    const payload = {
+      sub: userId,
+      email: user.email,
+      credits: balance._sum.amount ?? 0,
+    };
+
+    const accessToken = this.jwtService.sign(payload);
+
+    return { accessToken, userId, email: user.email, credits: balance._sum.amount ?? 0 };
   }
 }
