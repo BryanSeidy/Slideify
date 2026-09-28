@@ -51,3 +51,9 @@ outputs/
 
 # BullMQ Redis
 redis-data/
+# Local secret notes (never commit)
+GITHUB_Tok.txt
+*_Tok.txt
+*token*.txt
+*.pem
+*.key
