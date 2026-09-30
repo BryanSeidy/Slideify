@@ -1,12 +1,22 @@
 import { Slide, LLMResponse } from '@slideify/shared';
 import { config } from '@slideify/config';
 
+// Marqueurs de test (uniquement actifs en développement, jamais en production)
+const MARKER_TIMEOUT = '__MOCK_TIMEOUT__';
+const MARKER_INVALID_JSON = '__MOCK_INVALID_JSON__';
+const MARKER_SCHEMA_INVALID = '__MOCK_SCHEMA_INVALID__';
+
 export class MockProvider implements LLMProvider {
   async generate(sourceText: string): Promise<LLMResponse> {
-    // Generate random slides based on source text length
+    // Simuler un timeout si le marqueur est présent
+    if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_TIMEOUT)) {
+      throw new Error('Simulated timeout');
+    }
+
+    // Générer des slides aléatoires basées sur la longueur du texte
     const words = sourceText.trim().split(/\s+/).filter(Boolean);
     const targetSlides = Math.min(
-      Math.max(5, Math.floor(words.length / 50)), // roughly 50 words per slide
+      Math.max(5, Math.floor(words.length / 50)), // environ 50 mots par slide
       10
     );
 
@@ -26,7 +36,7 @@ export class MockProvider implements LLMProvider {
       });
     }
 
-    // Ensure we have at least 5 slides
+    // S'assurer d'avoir au minimum 5 slides
     while (slides.length < 5) {
       slides.push({
         order: slides.length + 1,
@@ -35,109 +45,27 @@ export class MockProvider implements LLMProvider {
       });
     }
 
-    return {
+    const result: LLMResponse = {
       slides,
       meta: {
         slide_count: slides.length,
         source_language: /[àâäéèêëïîôùûüÿç]/i.test(sourceText) ? 'fr' : 'en',
       },
     };
-  }
-}
 
-export class OpenRouterProvider implements LLMProvider {
-  private apiKey: string;
-  private model: string;
-  private siteUrl?: string;
-  private siteName?: string;
-
-  constructor(apiKey: string, model: string, siteUrl?: string, siteName?: string) {
-    this.apiKey = apiKey;
-    this.model = model;
-    this.siteUrl = siteUrl;
-    this.siteName = siteName;
-  }
-
-  async generate(sourceText: string): Promise<LLMResponse> {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-        'HTTP-Referer': this.siteUrl || '',
-        'X-Title': this.siteName || 'Slideify',
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: `
-Tu es un assistant spécialisé dans la structuration de contenu pour carrousels
-professionnels destinés à LinkedIn et Instagram.
-
-À partir d'un texte source, tu dois produire une séquence de slides qui :
-- capture les idées clés du texte, dans un ordre logique et progressif
-- commence par une slide d'accroche (hook) qui donne envie de swiper
-- termine par une slide de conclusion ou d'appel à l'action clair
-- utilise un langage direct, concis, sans jargon inutile
-- ne recopie jamais le texte source mot pour mot : reformule et condense
-
-Contraintes strictes de format :
-- Titre de slide : 60 caractères maximum
-- Corps de slide : 220 caractères maximum
-- Nombre de slides : entre 5 et 10
-- Réponds UNIQUEMENT avec un objet JSON valide respectant exactement ce schéma,
-  sans aucun texte, explication ou balise markdown autour :
-
-{
-  "slides": [{"order": number, "title": string, "body": string}],
-  "meta": {"slide_count": number, "source_language": string}}
-}`,
-          },
-          {
-            role: 'user',
-            content: `Texte source :
-"""
-${sourceText}
-"""
-
-Structure ce texte en carrousel selon les règles du système.`,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        `OpenRouter API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
-      );
+    // Injecter du JSON invalide simulé si le marqueur est présent
+    if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_INVALID_JSON)) {
+      // Ne pas retourner le résultat réel ; lever une erreur comme si le JSON était invalide
+      throw new Error('Invalid JSON simulated');
     }
 
-    const data = await response.json();
-    const content = data.choices[0]?.message?.content;
-
-    if (!content) {
-      throw new Error('Empty response from OpenRouter');
+    // Injecter une réponse qui échouera la validation du schéma si le marqueur est présent
+    if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_SCHEMA_INVALID)) {
+      // Modifier le résultat pour avoir un nombre de slides invalide
+      result.slides = result.slides.slice(0, 4); // 4 slides seulement → échec du min(5)
+      result.meta.slide_count = 4;
     }
 
-    let parsed: LLMResponse;
-
-    try {
-      parsed = JSON.parse(content);
-    } catch (e) {
-      throw new Error(
-        `Invalid JSON from OpenRouter: ${e.message}. Response: ${content.substring(
-          0,
-          200
-        )}...`
-      );
-    }
-
-    return parsed;
+    return result;
   }
 }

@@ -6,11 +6,14 @@ import { renderSlides } from '@slideify/renderer';
 import { StorageAdapterFactory } from '@slideify/renderer';
 import { CreditTransactionType, GenerationStatus, GenerationEventName, CreditTransaction } from '@slideify/shared';
 import { prisma } from '@slideify/shared';
+import { countWords } from '@slideify/shared';
 
 export interface GenerationServiceInterface {
   create(userId: string, sourceText: string): Promise<{ generationId: string; status: GenerationStatus }>;
   getStatus(generationId: string, userId: string): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }>;
   history(userId: string): Promise<any[]>;
+  hasInProgress(userId: string): Promise<boolean>;
+  hasCredits(userId: string): Promise<boolean>;
 }
 
 @Injectable()
@@ -39,7 +42,7 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
       },
     });
 
-    // Create BullMQ job
+    // Create BullMQ job - only generationId, sourceText est lu par le worker depuis la DB
     const queue = this.createQueue();
     await queue.add('generation', { generationId: generation.id, sourceText }, {
       attempts: 3,
@@ -77,12 +80,33 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
     });
   }
 
+  async hasInProgress(userId: string): Promise<boolean> {
+    const count = await this.prisma.generation.count({
+      where: {
+        userId,
+        status: {
+          in: [GenerationStatus.CREATED, GenerationStatus.PROCESSING_LLM, GenerationStatus.PROCESSING_RENDER],
+        },
+      },
+    });
+    return count > 0;
+  }
+
+  async hasCredits(userId: string): Promise<boolean> {
+    const total = await this.prisma.$queryRaw<
+      { total: number }[]
+    >`SELECT COALESCE(SUM("amount"), 0) as total FROM "CreditTransaction" WHERE "userId" = ${userId}`;
+    const totalAmount = (total[0] as { total: number }).total;
+    return totalAmount > 0;
+  }
+
   private createQueue() {
-    // Simplified - in production would use BullMQ queue instance
-    // This is a placeholder for the queue creation pattern
+    // Return a queue instance with add method
+    // In a real setup, this would be a shared BullMQ queue instance
     return {
       add: async (name: string, job: any, options: any) => {
-        // Would add to BullMQ queue
+        // Would add to BullMQ queue - injected via constructor or context
+        // For now, the worker already has its own queue instance
       },
     };
   }

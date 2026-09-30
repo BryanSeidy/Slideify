@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+// ---- Compteur de mots (partagé front/back) ----
+export function countWords(text: string): number {
+  if (!text) return 0;
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
 // ---- Slide schema (PROMPTS.md contract) ----
 export const SlideSchema = z.object({
   order: z.number().int().min(1).max(10),
@@ -21,6 +27,8 @@ export type Slide = z.infer<typeof SlideSchema>;
 export type LLMResponse = z.infer<typeof LLMResponseSchema>;
 
 // ---- Generation input ----
+// Le seuil est exprimé en mots (80–3000).
+// On stocke le texte brut ; la validation front/revalide serveur comptent en mots.
 export const GenerationInputSchema = z.object({
   sourceText: z
     .string()
