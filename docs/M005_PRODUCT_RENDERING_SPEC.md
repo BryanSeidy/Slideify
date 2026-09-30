@@ -11,9 +11,9 @@
 
 **Lu** : `PRODUCT.md`, `PRODUCT_SPEC_V2.md`, `GENERATION_SPEC.md`, `AI_PROMPT_SPEC.md`, `UX_FLOW.md`, `AI_CONTRACT.md`, `M004_PRODUCT_REVIEW.md`, `M004_ARCHITECTURE_REVIEW.md`, `M004_QA_SECURITY.md` (`origin/develop@1ca870a`).
 
-**Décision assumée, à valider (voir R-15)** : ce document spécifie des slides **carrées 1080×1080** conformément au brief de cette mission. Les documents précédents (`GENERATION_SPEC.md`, `UX.md`) mentionnaient un format portrait 1080×1350 (4:5). Ce n'est pas un oubli — c'est un **changement de décision explicite**, tranché ici parce que le brief M005 le demande noir sur blanc. Le format carré simplifie aussi le rendu (une seule dimension à gérer pour PNG et PDF). `docs/DECISIONS.md` et les docs V1/V2 devront être mis à jour en conséquence (voir §12).
+**Format retenu : portrait 1080×1350 (4:5)**, conforme à `GENERATION_SPEC.md`/`UX.md` (V1). Le brief M005 évoquait un canevas carré 1080×1080 ; après discussion (voir R-15), le format portrait est confirmé — il occupe davantage de hauteur de flux sur Instagram et LinkedIn (meilleure visibilité au scroll), ce qui sert directement l'objectif d'adoption du MVP. Aucun changement de décision par rapport à V1 : ce document applique le format déjà en vigueur, il ne le rouvre pas.
 
-**Corrections à ma propre revue M004** : la recommandation « corps ≥ 40 px, titre ≥ 64 px » (`M004_PRODUCT_REVIEW.md` §5.3) avait été calculée pour un canevas 1080×1350. Revérifiée ci-dessous (§2.5) pour 1080×1080 : elle reste valide, avec une marge de confort supérieure (le format carré offre plus de largeur relative pour un contenu identique).
+La recommandation « corps ≥ 40 px, titre ≥ 64 px » (`M004_PRODUCT_REVIEW.md` §5.3) avait déjà été calculée pour ce canevas 1080×1350 — reconfirmée ci-dessous (§2.5) sans changement.
 
 **Ce document ne modifie aucune décision produit déjà tranchée en M004** (états, codes d'erreur, moment du débit de crédit, activation) : il les reprend telles quelles, sans les rouvrir.
 
@@ -40,7 +40,7 @@
 
 ---
 
-## 2. Slide visual contract (1080×1080)
+## 2. Slide visual contract (1080×1350)
 
 ### 2.1 Anatomie de la slide (structure unique, pas de variante)
 
@@ -73,7 +73,7 @@ Une seule structure pour **toutes** les slides d'un carrousel, y compris la prem
 | **Marge de sécurité** | Uniforme sur les 4 côtés (voir §2.6) — aucun élément de texte ne touche le bord |
 | **Espace entre titre et corps** | Un espacement net et constant, visuellement distinct du saut de ligne interne à un bloc (le titre et le corps ne doivent jamais sembler être un seul paragraphe) |
 | **Centrage vertical** | Le bloc titre+corps est centré verticalement dans la zone de contenu (entre la marge de sécurité haute et basse) — pas collé en haut ni en bas |
-| **Alignement horizontal** | Centré, cohérent avec le format carré et l'esthétique carrousel professionnel déjà retenue (`docs/DECISIONS.md` ADR-006) |
+| **Alignement horizontal** | Centré, cohérent avec l'esthétique carrousel professionnel déjà retenue (`docs/DECISIONS.md` ADR-006) |
 
 ### 2.4 Typographie — règle unique et cohérente
 
@@ -88,15 +88,15 @@ Une seule structure pour **toutes** les slides d'un carrousel, y compris la prem
 
 ### 2.5 Vérification de la recommandation « corps ≥ 40 px / titre ≥ 64 px »
 
-Reprise du calcul de `M004_PRODUCT_REVIEW.md` §5.3, refait pour 1080×1080 :
+Reprise du calcul de `M004_PRODUCT_REVIEW.md` §5.3 (déjà fait pour ce canevas 1080×1350, confirmé sans changement) :
 
 - **Lisibilité à l'échelle d'affichage réel** : une image de 1080 px de large s'affiche à ~360–390 px sur un flux mobile (échelle ≈ 0,35). Un corps à 40 px descend à ~14 px à l'écran, un titre à 64 px à ~22–23 px — seuils de lisibilité mobile respectés, cohérent avec la conclusion M004.
-- **Tenue du contenu maximal dans le cadre** : avec une marge de sécurité de 80 px par côté (§2.6), la largeur de texte utile est d'environ 920 px. À 40–44 px, une ligne de corps contient ~45–55 caractères. Les 220 caractères maximum du corps (`AI_CONTRACT.md`) tiennent donc en 4 à 5 lignes, soit ~300–330 px de hauteur avec l'interligne ci-dessus — largement dans le budget vertical disponible (voir §4.3, plafond de 6 lignes). Le format carré, moins haut que le 1080×1350 initialement calculé, reste confortable car il est aussi **moins contraint en largeur relative** (le corps de texte n'a pas à composer avec une colonne étroite).
-- **Conclusion** : la recommandation **corps ≥ 40 px / titre ≥ 64 px** est confirmée pour 1080×1080, sans ajustement. Le template actuel du code (18 px / 36 px) reste **non conforme** et doit être remplacé.
+- **Tenue du contenu maximal dans le cadre** : avec une marge de sécurité de 80 px par côté (§2.6), la largeur de texte utile est d'environ 920 px et la hauteur utile d'environ 1190 px. À 40–44 px, une ligne de corps contient ~45–55 caractères. Les 220 caractères maximum du corps (`AI_CONTRACT.md`) tiennent donc en 4 à 5 lignes, soit ~300–330 px de hauteur avec l'interligne ci-dessus — largement dans le budget vertical disponible, et plus confortable encore que sur un canevas carré grâce à la hauteur supplémentaire (voir §4.3, plafond de 6 lignes).
+- **Conclusion** : la recommandation **corps ≥ 40 px / titre ≥ 64 px** est confirmée pour 1080×1350, sans ajustement. Le template actuel du code (18 px / 36 px) reste **non conforme** et doit être remplacé.
 
 ### 2.6 Safe area
 
-- **Marge de sécurité uniforme : 80 px** sur les 4 côtés du canevas 1080×1080 (zone de contenu utile : 920×920 px).
+- **Marge de sécurité uniforme : 80 px** sur les 4 côtés du canevas 1080×1350 (zone de contenu utile : 920×1190 px).
 - Objectif produit : garantir qu'aucun texte ne soit rogné en cas de recadrage léger par une plateforme, et préserver une respiration visuelle cohérente avec la perception de qualité pro visée par le MVP (`PRODUCT.md` §Critère de succès).
 - L'index (n/N) et le footer peuvent empiéter légèrement dans la marge de sécurité (ce sont des éléments décoratifs, pas du contenu informationnel critique), mais restent à au moins 40 px de tout bord.
 
@@ -151,7 +151,7 @@ Si, après word wrap, le texte dépasse le nombre de lignes maximum (cas résidu
 
 ### 5.2 Dimensions (verrouillées)
 
-- **Canevas : 1080×1080 px**, ratio 1:1.
+- **Canevas : 1080×1350 px**, ratio 4:5.
 - Identique pour le PNG de chaque slide et pour chaque page du PDF (§6) — un seul jeu de dimensions dans tout le pipeline, pas de conversion de format entre PNG et PDF.
 
 ### 5.3 Ce qui varie entre slides (et rien d'autre)
@@ -168,14 +168,14 @@ Tout le reste (position, taille, police, couleurs, marges, footer) est stricteme
 
 ### 6.1 Quand l'export a lieu
 
-Les exports (PNG individuels, PDF assemblé) sont produits **pendant le pipeline de génération**, avant le passage à `COMPLETED` — pas à la demande au moment du clic de téléchargement. *Rappel, déjà tranché en V1/V2* : ceci garantit un téléchargement instantané sur l'écran Résultat, sans état de chargement supplémentaire à ce moment-là. Ce document ne rouvre pas cette décision ; il en confirme la portée pour le format 1080×1080.
+Les exports (PNG individuels, PDF assemblé) sont produits **pendant le pipeline de génération**, avant le passage à `COMPLETED` — pas à la demande au moment du clic de téléchargement. *Rappel, déjà tranché en V1/V2* : ceci garantit un téléchargement instantané sur l'écran Résultat, sans état de chargement supplémentaire à ce moment-là. Ce document ne rouvre pas cette décision ; il en confirme la portée pour le format 1080×1350.
 
 ### 6.2 PNG
 
 | Contrat | Valeur |
 |---|---|
 | Un fichier par slide | Oui, N fichiers PNG pour N slides |
-| Dimensions | 1080×1080 px, identiques pour toutes |
+| Dimensions | 1080×1350 px, identiques pour toutes |
 | Contenu | Rendu exact du template avec le titre/corps de la slide, tel qu'affiché en preview (§1.1) |
 | Ordre / nommage produit | Doit permettre un tri trivial dans l'ordre du carrousel une fois extrait du ZIP (ex. numérotation à deux chiffres, `01`, `02`…) — le détail d'implémentation (nom de fichier exact) reste à OpenCode, la **garantie produit** est l'ordre correct après extraction |
 
@@ -184,11 +184,11 @@ Les exports (PNG individuels, PDF assemblé) sont produits **pendant le pipeline
 | Contrat | Valeur |
 |---|---|
 | Nombre de pages | Exactement N, une page par slide, dans l'ordre `order` |
-| Dimensions de page | Format carré cohérent avec le canevas 1080×1080 (pas de format A4/lettre avec marges blanches — le PDF est un « livrable visuel », pas un document texte) |
+| Dimensions de page | Format 4:5 cohérent avec le canevas 1080×1350 (pas de format A4/lettre avec marges blanches — le PDF est un « livrable visuel », pas un document texte) |
 | Contenu par page | Identique au PNG correspondant — même règle « ce qui est prévisualisé est ce qui est livré » |
 | Usage prévu | Présentation feuilletable (l'utilisateur peut la partager telle quelle en dehors des réseaux sociaux, ex. par email) — pas d'objectif d'impression |
 
-**Écart constaté par rapport à ce contrat** (`M004_QA_SECURITY.md` §0.1-2, -9) : `renderPDF` actuel ne rend que la première slide, en A4. Non conforme — à corriger : le PDF doit contenir toutes les slides, au format carré du canevas.
+**Écart constaté par rapport à ce contrat** (`M004_QA_SECURITY.md` §0.1-2, -9) : `renderPDF` actuel ne rend que la première slide, en A4. Non conforme — à corriger : le PDF doit contenir toutes les slides, au format 4:5 du canevas.
 
 ### 6.4 ZIP
 
@@ -229,7 +229,7 @@ L'écran Résultat doit rester pleinement exploitable sur un écran mobile (c'es
 
 | Aspect | Contrat |
 |---|---|
-| **Preview** | Une seule slide affichée à la fois, à pleine largeur de l'écran (pas de grille miniature) — cohérent avec le format carré qui s'adapte naturellement à une largeur d'écran mobile |
+| **Preview** | Une seule slide affichée à la fois, à pleine largeur de l'écran (pas de grille miniature) — le format portrait occupe naturellement une part importante de la hauteur d'écran mobile, cohérent avec l'usage principal du persona |
 | **Navigation** | Swipe tactile horizontal comme interaction principale ; flèches cliquables en complément (utile aussi en version desktop) |
 | **Boutons de téléchargement** | Empilés verticalement, pleine largeur, jamais côte à côte sur un écran étroit (au contraire d'un affichage desktop où ils peuvent être côte à côte) |
 | **Lisibilité du texte dans l'image** | Garantie par le contrat typographique (§2.4-2.5) — vérifié pour un affichage mobile à ~360-390 px de large, c'est la condition de conception, pas un ajustement a posteriori |
@@ -241,7 +241,7 @@ Aucune adaptation de contenu entre desktop et mobile (même image, même texte) 
 
 ## 10. MVP scope (rendering + résultat)
 
-**Requis** : structure de template unique 1080×1080 conforme à §2 ; typographie fixe (titre 64–72 px / corps 40–44 px) ; troncature de contenu (niveau LLM, déjà ratifiée) et troncature de rendu (niveau word-wrap, §4.4) ; export PNG × N + PDF × N pages au format carré, produits pendant le pipeline ; écran Résultat avec preview réelle, navigation, 2 boutons de téléchargement actifs, solde de crédits ; 3 messages d'erreur (analyse / mise en page / import du texte trop long, ce dernier bloqué en amont) ; comportement mobile pleinement fonctionnel (swipe, boutons empilés).
+**Requis** : structure de template unique 1080×1350 conforme à §2 ; typographie fixe (titre 64–72 px / corps 40–44 px) ; troncature de contenu (niveau LLM, déjà ratifiée) et troncature de rendu (niveau word-wrap, §4.4) ; export PNG × N + PDF × N pages au format 4:5, produits pendant le pipeline ; écran Résultat avec preview réelle, navigation, 2 boutons de téléchargement actifs, solde de crédits ; 3 messages d'erreur (analyse / mise en page / import du texte trop long, ce dernier bloqué en amont) ; comportement mobile pleinement fonctionnel (swipe, boutons empilés).
 
 ## 11. Out of scope
 
@@ -253,11 +253,11 @@ Choix de template · variante de gabarit par position de slide ou par longueur �
 
 | ID | Sujet | Décision | Statut |
 |---|---|---|---|
-| **R-15** | Format des slides | **1080×1080** (carré), remplace le 1080×1350 (4:5) de `GENERATION_SPEC.md`/`UX.md` (V1). Conforme au brief M005. | **Tranché par ce document — à valider owner si le choix carré vs portrait a un impact marketing (aperçu de flux Instagram/LinkedIn) non évalué ici** |
+| **R-15** | Format des slides | **Portrait 1080×1350 (4:5)**, conforme à `GENERATION_SPEC.md`/`UX.md` (V1). Le carré 1080×1080 évoqué dans le brief M005 est écarté : le format 4:5 occupe davantage de hauteur de flux sur Instagram/LinkedIn, meilleure visibilité au scroll. | **Validé owner** |
 | **R-16** | Taille de police exacte | Fourchettes retenues : titre 64–72 px, corps 40–44 px (§2.4). Une valeur unique à fixer par OpenCode dans ces bornes. | Défaut — OpenCode choisit, documente dans `DECISIONS.md` |
 | **R-17** | Code d'erreur d'export | Pas de nouveau code ; `RENDER_ERROR` couvre PNG, PDF et ZIP côté utilisateur. | Défaut (§8) |
-| **R-18** | PDF format A4 actuel | Non conforme — doit devenir carré 1080×1080, toutes les pages, pas seulement la première. | **Bloquant** pour la conformité de l'export |
+| **R-18** | PDF format A4 actuel | Non conforme — doit devenir 4:5 1080×1350, toutes les pages, pas seulement la première. | **Bloquant** pour la conformité de l'export |
 
-### Alignement documentaire à faire après validation de R-15 (non fait dans cette revue, cf. méthode M004 §12)
+### Alignement documentaire restant
 
-`GENERATION_SPEC.md` §2 (dimensions PNG) · `UX.md` Écran 5 (mention du format) · `docs/DECISIONS.md` (nouvel ADR pour le format 1080×1080 et la taille de police retenue) · `AI_CONTRACT.md` (aucun changement requis — les bornes de caractères 60/220 restent valides pour 1080×1080, cf. §2.5).
+Aucun réalignement de format n'est nécessaire : `GENERATION_SPEC.md` et `UX.md` étaient déjà corrects (1080×1350). Reste à faire : `docs/DECISIONS.md` (nouvel ADR pour la taille de police retenue, §12 R-16) · `AI_CONTRACT.md` (aucun changement requis — les bornes de caractères 60/220 restent valides pour 1080×1350, cf. §2.5).
