@@ -29,14 +29,14 @@ export class GenerationController {
     if (wordCount < 80) {
       return {
         statusCode: 400,
-        message: `Texte trop court — minimum 80 mots. Vous manquez de ${80 - wordCount} mot(s).`,
+        message: "Texte trop court — minimum 80 mots. Vous manquez de " + (80 - wordCount) + " mot(s).",
         error: 'INPUT_TOO_SHORT',
       };
     }
     if (wordCount > 3000) {
       return {
         statusCode: 400,
-        message: `Texte trop long — maximum 3000 mots. Vous en avez ${wordCount - 3000} de trop.`,
+        message: "Texte trop long — maximum 3000 mots. Vous en avez " + (wordCount - 3000) + " de trop.",
         error: 'INPUT_TOO_LONG',
       };
     }
@@ -46,7 +46,7 @@ export class GenerationController {
     if (hasInProgress) {
       return {
         statusCode: 403,
-        message: 'Une génération est déjà en cours.',
+        message: "Une génération est déjà en cours.",
         error: 'GENERATION_IN_PROGRESS',
       };
     }
@@ -56,7 +56,7 @@ export class GenerationController {
     if (!hasCredits) {
       return {
         statusCode: 402,
-        message: 'Vous n'avez plus de crédits disponibles.',
+        message: "Vous n'avez plus de crédits disponibles.",
         error: 'NO_CREDITS',
       };
     }

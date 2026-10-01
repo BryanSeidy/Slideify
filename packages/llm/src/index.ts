@@ -1,4 +1,7 @@
-import { Slide, LLMResponse, GenerationJob } from '@slideify/shared';
+import { LLMProvider } from './index';
+export { createLLMProvider } from './factory';
+export { MockProvider } from './providers';
+export { OpenRouterProvider } from './providers';
 
 export interface LLMProvider {
   generate(sourceText: string): Promise<LLMResponse>;

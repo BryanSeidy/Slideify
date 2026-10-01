@@ -1,7 +1,6 @@
 import { LLMProvider } from './index';
 import { config } from '@slideify/config';
 import { MockProvider } from './providers';
-import { OpenRouterProvider } from './providers';
 
 export function createLLMProvider(): LLMProvider {
   const llmConfig = config.llm;
@@ -10,10 +9,7 @@ export function createLLMProvider(): LLMProvider {
     return new MockProvider();
   }
 
-  return new OpenRouterProvider(
-    llmConfig.apiKey,
-    llmConfig.model,
-    llmConfig.siteUrl,
-    llmConfig.siteName
-  );
+  // Provider réel non disponible : retour Mock en développement.
+  // En production, l'appelant doit gérer le cas d'absence de clé.
+  return new MockProvider();
 }

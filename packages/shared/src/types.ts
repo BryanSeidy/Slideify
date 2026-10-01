@@ -64,6 +64,17 @@ export enum CreditTransactionType {
   ADJUSTMENT = 'ADJUSTMENT',
 }
 
+// ---- Credit Transaction (partage du modèle allégé) ----
+export interface CreditTransaction {
+  id: string;
+  userId: string;
+  amount: number; // positif = crédit, négatif = débit
+  type: CreditTransactionType;
+  reference?: string; // génération id, session Stripe id
+  metadata?: unknown;
+  createdAt: Date;
+}
+
 // ---- Generation Event Names ----
 export enum GenerationEventName {
   USER_ACTIVATED = 'user_activated',

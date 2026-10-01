@@ -33,12 +33,12 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
   }
 
   async create(userId: string, sourceText: string): Promise<{ generationId: string; status: GenerationStatus }> {
-    // Create generation record
+    // Create generation record - start at QUEUED (not CREATED, which doesn't exist in enum)
     const generation = await this.prisma.generation.create({
       data: {
         userId,
         sourceText,
-        status: GenerationStatus.CREATED,
+        status: GenerationStatus.QUEUED,
       },
     });
 
@@ -85,7 +85,7 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
       where: {
         userId,
         status: {
-          in: [GenerationStatus.CREATED, GenerationStatus.PROCESSING_LLM, GenerationStatus.PROCESSING_RENDER],
+          in: [GenerationStatus.QUEUED, GenerationStatus.PROCESSING_LLM, GenerationStatus.PROCESSING_RENDER],
         },
       },
     });
@@ -102,11 +102,10 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
 
   private createQueue() {
     // Return a queue instance with add method
-    // In a real setup, this would be a shared BullMQ queue instance
+    // In production, would use injected BullMQ Queue from NestJS
     return {
       add: async (name: string, job: any, options: any) => {
         // Would add to BullMQ queue - injected via constructor or context
-        // For now, the worker already has its own queue instance
       },
     };
   }

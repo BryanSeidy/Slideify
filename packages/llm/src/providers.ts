@@ -1,4 +1,4 @@
-import { Slide, LLMResponse } from '@slideify/shared';
+import { Slide, LLMResponse, LLMProvider } from '@slideify/shared';
 import { config } from '@slideify/config';
 
 // Marqueurs de test (uniquement actifs en développement, jamais en production)

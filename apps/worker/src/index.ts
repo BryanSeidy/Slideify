@@ -3,7 +3,7 @@ import { config } from '@slideify/config';
 import { LLMProvider, createLLMProvider } from '@slideify/llm';
 import { renderSlides } from '@slideify/renderer';
 import { StorageAdapterFactory } from '@slideify/renderer';
-import { PrismaService } from '@slideify/schema';
+import { prisma } from '@slideify/schema';
 import { CreditTransactionType, GenerationStatus, GenerationEventName, CreditTransaction, Slide, LLMResponse } from '@slideify/shared';
 import { Logger } from './utils/logger';
 
@@ -123,6 +123,7 @@ export async function main() {
         // Step 4: Validate LLM response using LLMResponseSchema from shared
         let validated: LLMResponse;
         try {
+          const { LLMResponseSchema } = await import('@slideify/shared');
           validated = LLMResponseSchema.parse(llmResult);
         } catch (error) {
           logger.error(`LLM response validation failed for generation ${generationId}: ${error.message}`);

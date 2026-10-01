@@ -6,7 +6,6 @@
     "packages/*"
   ],
   "scripts": {
-    "install": "pnpm install",
     "dev": "pnpm --filter=@slideify/web dev & pnpm --filter=@slideify/api dev & pnpm --filter=@slideify/worker dev",
     "build": "pnpm --filter=@slideify/web build & pnpm --filter=@slideify/api build & pnpm --filter=@slideify/worker build",
     "lint": "pnpm --filter=@slideify/web lint & pnpm --filter=@slideify/api lint & pnpm --filter=@slideify/worker lint",
