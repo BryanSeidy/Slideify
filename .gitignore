@@ -16,7 +16,6 @@ build/
 
 # Database
 *.sqlite
-prisma/
 sqlite/
 
 # Logs

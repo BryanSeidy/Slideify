@@ -1,0 +1,122 @@
+// Prisma schema for Slideify MVP
+// Defines all data models per architecture documentation
+// Credit system: append-only ledger (CreditTransaction)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String               @id @default(cuid())
+  email              String               @unique
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  creditTransactions CreditTransaction[]
+  generations        Generation[]
+  events             GenerationEvent[]
+
+  @@index [email]
+}
+
+model CreditTransaction {
+  id        String                @id @default(cuid())
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int                   // positif = crédit, négatif = débit
+  type      CreditTransactionType
+  reference String?               // generation id, session Stripe id
+  metadata  Json?
+  createdAt DateTime              @default(now())
+
+  @@index [userId]
+  @@index [createdAt]
+}
+
+enum CreditTransactionType {
+  GENERATION_DEBIT
+  REFUND
+  MANUAL_GRANT
+  PROMO
+  ADJUSTMENT
+}
+
+model Generation {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceText  String
+  status      GenerationStatus  @default(QUEUED)
+  slideCount  Int?
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  outputs     Output[]
+  events      GenerationEvent[]
+
+  @@index [userId]
+  @@index [status]
+  @@index [createdAt]
+}
+
+enum GenerationStatus {
+  QUEUED
+  PROCESSING_LLM
+  PROCESSING_RENDER
+  COMPLETED
+  FAILED
+}
+
+model Output {
+  id            String         @id @default(cuid())
+  generationId  String
+  generation    Generation     @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  format        OutputFormat
+  url           String
+  expiresAt     DateTime
+  size          Int
+  createdAt     DateTime       @default(now())
+
+  @@index [generationId]
+  @@index [expiresAt]
+}
+
+enum OutputFormat {
+  PNG
+  ZIP
+  PDF
+}
+
+model GenerationEvent {
+  id        String   @id @default(cuid())
+  name      String   // "user_activated", "first_generation_completed"
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index [actorId]
+  @@index [name]
+  @@index [createdAt]
+}
+
+model WebhookEvent {
+  id            String   @id @default(cuid())
+  provider      String
+  eventType     String
+  payload       Json
+  processed     Boolean  @default(false)
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  @@unique [provider, id]  // idempotency by Stripe event ID only
+  @@index [processed]
+}
