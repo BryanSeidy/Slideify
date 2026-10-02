@@ -1,12 +1,13 @@
+'use client';
+
 import { Suspense } from 'react';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [apiStatus, setApiStatus] = useState<'uninitialized' | 'checking' | 'ok' | 'error'>('uninitialized');
-  const [env, setEnv] = useState<string>('');
+  const [env] = useState<string>('');
 
   // Check API health on mount
   useEffect(() => {
@@ -18,25 +19,25 @@ export default function Home() {
         const response = await fetch('/api/health');
         if (mounted) {
           if (response.ok) {
-            const data = await response.json();
+            const data = (await response.json()) as { status?: string };
             setApiStatus(data.status === 'ok' ? 'ok' : 'error');
           } else {
             setApiStatus('error');
           }
         }
-      } catch (error) {
+      } catch {
         if (mounted) {
           setApiStatus('error');
         }
       }
     };
 
-    checkApiHealth();
+    void checkApiHealth();
 
     return () => {
       mounted = false;
     };
-  }, [navigate]);
+  }, [router]);
 
   return (
     <Suspense fallback={<div>Bienvenue sur Slideify</div>}>
@@ -54,8 +55,13 @@ export default function Home() {
 
           <div>
             <h2 className="font-semibold mb-2">Statut API</h2>
-            <p className={apiStatus === 'ok' ? 'text-success' : apiStatus === 'error' ? 'text-error' : 'text-muted'}
-              >{apiStatus}</p>
+            <p
+              className={
+                apiStatus === 'ok' ? 'text-success' : apiStatus === 'error' ? 'text-error' : 'text-muted'
+              }
+            >
+              {apiStatus}
+            </p>
           </div>
 
           <div>

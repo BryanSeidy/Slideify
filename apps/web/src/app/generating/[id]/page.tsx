@@ -13,7 +13,7 @@ export default function GeneratingPage() {
     const poll = async () => {
       try {
         const res = await fetch(`/api/generations/${generationId}/status`);
-        const data = await res.json();
+        const data = (await res.json()) as { status: string; error?: string };
         setStatus(data.status);
         if (data.status === 'PROCESSING_LLM') setStep('Analyse du contenu…');
         if (data.status === 'PROCESSING_RENDER') setStep('Mise en page du carrousel…');

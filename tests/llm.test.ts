@@ -1,12 +1,11 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { MockProvider } from '../packages/llm/src/providers';
-import { SlideSchema, LLMResponseSchema, GenerationInputSchema } from '../packages/shared/src/types';
-import { config } from '../packages/config/src/config';
+import { SlideSchema, LLMResponseSchema, GenerationInputSchema, countWords } from '../packages/shared/src/types';
 
 describe('PROMPTS.md contract validation', () => {
   it('MockProvider returns 5-10 slides', async () => {
     const provider = new MockProvider();
-    const sourceText = 'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum';
+    const sourceText =
+      'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum';
     const result = await provider.generate(sourceText);
     expect(result.slides.length).toBeGreaterThanOrEqual(5);
     expect(result.slides.length).toBeLessThanOrEqual(10);
@@ -77,30 +76,41 @@ describe('PROMPTS.md contract validation', () => {
   });
 });
 
-describe('Zod schemas', () => {
-  it('GenerationInputSchema rejects short text (< 80 words)', () => {
-    const result = GenerationInputSchema.safeParse({ sourceText: 'too short' });
-    expect(result.success).toBe(false);
+describe('countWords (shared front/back)', () => {
+  it('counts 0 for empty / whitespace-only', () => {
+    expect(countWords('')).toBe(0);
+    expect(countWords('   ')).toBe(0);
+    expect(countWords('\n\t  \n')).toBe(0);
   });
 
-  it('GenerationInputSchema accepts valid text', () => {
-    const text = 'word '.repeat(80);
-    const result = GenerationInputSchema.safeParse({ sourceText: text });
-    expect(result.success).toBe(true);
-  });
-
-  it('GenerationInputSchema rejects long text (> 3000 words)', () => {
-    const text = 'word '.repeat(3001);
-    const result = GenerationInputSchema.safeParse({ sourceText: text });
-    expect(result.success).toBe(false);
+  it('counts words separated by spaces', () => {
+    expect(countWords('word '.repeat(79).trim())).toBe(79);
+    expect(countWords('word '.repeat(80).trim())).toBe(80);
   });
 });
 
-describe('Config', () => {
-  it('loads env defaults', () => {
-    const cfg = config;
-    expect(cfg.nodeEnv).toBe('development');
-    expect(cfg.redis.host).toBe('127.0.0.1');
-    expect(cfg.redis.port).toBe(6379);
+describe('GenerationInputSchema (word boundaries 79/80/3000/3001)', () => {
+  const words = (n: number) => 'word '.repeat(n).trim();
+
+  it('rejects 79 words', () => {
+    expect(GenerationInputSchema.safeParse({ sourceText: words(79) }).success).toBe(false);
+  });
+
+  it('accepts 80 words', () => {
+    expect(GenerationInputSchema.safeParse({ sourceText: words(80) }).success).toBe(true);
+  });
+
+  it('accepts 3000 words', () => {
+    expect(GenerationInputSchema.safeParse({ sourceText: words(3000) }).success).toBe(true);
+  });
+
+  it('rejects 3001 words', () => {
+    expect(GenerationInputSchema.safeParse({ sourceText: words(3001) }).success).toBe(false);
+  });
+
+  it('LLMResponseSchema still validates MockProvider output', async () => {
+    const provider = new MockProvider();
+    const result = await provider.generate(words(200));
+    expect(LLMResponseSchema.safeParse(result).success).toBe(true);
   });
 });

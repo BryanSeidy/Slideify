@@ -1,18 +1,23 @@
 {
   "name": "slideify",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "pnpm --filter=@slideify/web dev & pnpm --filter=@slideify/api dev & pnpm --filter=@slideify/worker dev",
-    "build": "pnpm --filter=@slideify/web build & pnpm --filter=@slideify/api build & pnpm --filter=@slideify/worker build",
-    "lint": "pnpm --filter=@slideify/web lint & pnpm --filter=@slideify/api lint & pnpm --filter=@slideify/worker lint",
-    "typecheck": "pnpm --filter=@slideify/web typecheck & pnpm --filter=@slideify/api typecheck & pnpm --filter=@slideify/worker typecheck",
-    "test": "pnpm --filter=@slideify/web test & pnpm --filter=@slideify/api test & pnpm --filter=@slideify/worker test",
-    "db:generate": "pnpm --filter=@slideify/schema db:generate",
-    "db:push": "pnpm --filter=@slideify/schema db:push",
-    "worker": "pnpm --filter=@slideify/worker run worker"
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev:worker": "pnpm --filter worker dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "jest --config jest.config.js",
+    "db:generate": "pnpm --filter @slideify/schema db:generate",
+    "db:push": "pnpm --filter @slideify/schema db:push",
+    "worker": "pnpm --filter worker start"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.43",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.14",
+    "typescript": "^5.9.3"
   }
 }
