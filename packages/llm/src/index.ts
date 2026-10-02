@@ -1,7 +1,6 @@
-import { LLMProvider } from './index';
-export { createLLMProvider } from './factory';
-export { MockProvider } from './providers';
-export { OpenRouterProvider } from './providers';
+import type { LLMResponse } from '@slideify/shared';
+
+export type { Slide, LLMResponse, GenerationJob } from '@slideify/shared';
 
 export interface LLMProvider {
   generate(sourceText: string): Promise<LLMResponse>;
@@ -14,4 +13,5 @@ export interface LLMConfig {
   siteName?: string;
 }
 
-export type { Slide, LLMResponse, GenerationJob };
+export { createLLMProvider } from './factory';
+export { MockProvider } from './providers';

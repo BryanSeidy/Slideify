@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { config } from '@slideify/config';
 import { JwtAuthGuard } from './jwt.guard';
 import { AuthService } from './auth.service';
 

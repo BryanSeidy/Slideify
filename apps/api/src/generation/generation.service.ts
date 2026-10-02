@@ -1,39 +1,28 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
-import { config } from '@slideify/config';
-import { LLMProvider, createLLMProvider } from '@slideify/llm';
-import { renderSlides } from '@slideify/renderer';
-import { StorageAdapterFactory } from '@slideify/renderer';
-import { CreditTransactionType, GenerationStatus, GenerationEventName, CreditTransaction } from '@slideify/shared';
-import { prisma } from '@slideify/shared';
-import { countWords } from '@slideify/shared';
+import { GenerationStatus } from '@slideify/shared';
 
 export interface GenerationServiceInterface {
   create(userId: string, sourceText: string): Promise<{ generationId: string; status: GenerationStatus }>;
-  getStatus(generationId: string, userId: string): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }>;
-  history(userId: string): Promise<any[]>;
+  getStatus(
+    generationId: string,
+    userId: string,
+  ): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }>;
+  history(userId: string): Promise<unknown[]>;
   hasInProgress(userId: string): Promise<boolean>;
   hasCredits(userId: string): Promise<boolean>;
 }
 
 @Injectable()
-export class GenerationService implements OnModuleInit, GenerationServiceInterface {
-  private llmProvider: LLMProvider;
-  private storage: ReturnType<typeof StorageAdapterFactory.create>;
-
-  constructor(private prisma: PrismaService) {
-    // LLM Provider sera initialisé au module init
-    this.llmProvider = {} as LLMProvider;
-    this.storage = {} as ReturnType<typeof StorageAdapterFactory.create>;
-  }
-
-  async onModuleInit() {
-    this.llmProvider = createLLMProvider();
-    this.storage = StorageAdapterFactory.create();
-  }
+export class GenerationService implements GenerationServiceInterface {
+  constructor(
+    private readonly prisma: PrismaService,
+    @InjectQueue('generation') private readonly generationQueue: Queue,
+  ) {}
 
   async create(userId: string, sourceText: string): Promise<{ generationId: string; status: GenerationStatus }> {
-    // Create generation record - start at QUEUED (not CREATED, which doesn't exist in enum)
     const generation = await this.prisma.generation.create({
       data: {
         userId,
@@ -42,18 +31,23 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
       },
     });
 
-    // Create BullMQ job - only generationId, sourceText est lu par le worker depuis la DB
-    const queue = this.createQueue();
-    await queue.add('generation', { generationId: generation.id, sourceText }, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 2000 },
-    });
+    await this.generationQueue.add(
+      'generation',
+      { generationId: generation.id },
+      {
+        jobId: generation.id,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+      },
+    );
 
-    return { generationId: generation.id, status: generation.status };
+    return { generationId: generation.id, status: generation.status as GenerationStatus };
   }
 
-  async getStatus(generationId: string, userId: string): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }> {
-    // Verify ownership
+  async getStatus(
+    generationId: string,
+    userId: string,
+  ): Promise<{ id: string; status: GenerationStatus; slideCount?: number; error?: string; createdAt: Date }> {
     const generation = await this.prisma.generation.findUnique({
       where: { id: generationId },
       include: { outputs: true },
@@ -65,14 +59,14 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
 
     return {
       id: generation.id,
-      status: generation.status,
-      slideCount: generation.slideCount,
-      error: generation.error,
+      status: generation.status as GenerationStatus,
+      slideCount: generation.slideCount ?? undefined,
+      error: generation.error ?? undefined,
       createdAt: generation.createdAt,
     };
   }
 
-  async history(userId: string): Promise<any[]> {
+  async history(userId: string): Promise<unknown[]> {
     return this.prisma.generation.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -93,20 +87,10 @@ export class GenerationService implements OnModuleInit, GenerationServiceInterfa
   }
 
   async hasCredits(userId: string): Promise<boolean> {
-    const total = await this.prisma.$queryRaw<
-      { total: number }[]
-    >`SELECT COALESCE(SUM("amount"), 0) as total FROM "CreditTransaction" WHERE "userId" = ${userId}`;
-    const totalAmount = (total[0] as { total: number }).total;
-    return totalAmount > 0;
-  }
-
-  private createQueue() {
-    // Return a queue instance with add method
-    // In production, would use injected BullMQ Queue from NestJS
-    return {
-      add: async (name: string, job: any, options: any) => {
-        // Would add to BullMQ queue - injected via constructor or context
-      },
-    };
+    const total = await this.prisma.creditTransaction.aggregate({
+      _sum: { amount: true },
+      where: { userId },
+    });
+    return (total._sum.amount ?? 0) > 0;
   }
 }

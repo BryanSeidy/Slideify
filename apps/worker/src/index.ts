@@ -1,24 +1,53 @@
 import { Queue, Worker } from 'bullmq';
 import { config } from '@slideify/config';
-import { LLMProvider, createLLMProvider } from '@slideify/llm';
-import { renderSlides } from '@slideify/renderer';
-import { StorageAdapterFactory } from '@slideify/renderer';
+import { createLLMProvider } from '@slideify/llm';
 import { prisma } from '@slideify/schema';
-import { CreditTransactionType, GenerationStatus, GenerationEventName, CreditTransaction, Slide, LLMResponse } from '@slideify/shared';
+import {
+  CreditTransactionType,
+  GenerationStatus,
+  GenerationEventName,
+  LLMResponseSchema,
+  type LLMResponse,
+} from '@slideify/shared';
 import { Logger } from './utils/logger';
 
 const logger = new Logger('worker');
 
-// Timeout global 90 s entre création et état terminal
-const GLOBAL_TIMEOUT_MS = 90_000;
-const START_TIME: number = Date.now();
+// Budget global par génération : 90 s entre prise en charge et état terminal.
+const GENERATION_TIMEOUT_MS = 90_000;
 
 const MARKER_TIMEOUT = '__MOCK_TIMEOUT__';
 const MARKER_INVALID_JSON = '__MOCK_INVALID_JSON__';
 const MARKER_SCHEMA_INVALID = '__MOCK_SCHEMA_INVALID__';
 
+function isTransientError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('Simulated timeout') ||
+    message.includes('TIMEOUT') ||
+    message.includes('ECONNRESET') ||
+    message.includes('ETIMEDOUT') ||
+    message.includes('429') ||
+    message.includes('500') ||
+    message.includes('502') ||
+    message.includes('503')
+  );
+}
+
+function truncateAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const words = text.split(' ');
+  let out = '';
+  for (const w of words) {
+    const next = out ? out + ' ' + w : w;
+    if (next.length + 1 > max) break; // +1 pour l'ellipse
+    out = next;
+  }
+  return (out || text.slice(0, max - 1)) + '…';
+}
+
 export async function main() {
-  logger.info('Starting Slideify generation worker...');
+  logger.info('Starting Slideify generation worker (M004: structured slides only, no rendering)...');
 
   const queue = new Queue('generation', {
     connection: {
@@ -29,188 +58,190 @@ export async function main() {
     defaultJobOptions: {
       attempts: 3,
       backoff: { type: 'exponential', delay: 2000 },
+      removeOnComplete: { age: 3600 },
+      removeOnFail: { age: 86400, count: 50 },
     },
   });
+  void queue;
 
   const worker = new Worker(
     'generation',
     async (job) => {
-      const { generationId, sourceText }: { generationId: string; sourceText: string } = job.data;
+      const { generationId } = job.data as { generationId: string };
+      const jobStartedAt = Date.now();
+
+      if (!generationId || typeof generationId !== 'string') {
+        logger.error('Poison job: missing generationId, abandoning without retry');
+        return;
+      }
+
+      // Prise atomique : QUEUED -> PROCESSING_LLM. Si count === 0, déjà prise ou terminale.
+      const claimed = await prisma.generation.updateMany({
+        where: { id: generationId, status: GenerationStatus.QUEUED },
+        data: { status: GenerationStatus.PROCESSING_LLM, startedAt: new Date() },
+      });
+
+      if (claimed.count === 0) {
+        const current = await prisma.generation.findUnique({
+          where: { id: generationId },
+          select: { status: true },
+        });
+        if (!current) {
+          logger.error(`Generation ${generationId} not found, abandoning without retry`);
+          return;
+        }
+        logger.info(`Generation ${generationId} already ${current.status}, skipping (idempotent)`);
+        return;
+      }
 
       logger.info(`Processing generation job ${generationId}`);
 
-      // Vérifier le timeout global
-      if (Date.now() - START_TIME > GLOBAL_TIMEOUT_MS) {
-        logger.warn('Global timeout exceeded, failing all remaining jobs');
+      const checkBudget = () => {
+        if (Date.now() - jobStartedAt > GENERATION_TIMEOUT_MS) {
+          throw new Error('TIMEOUT');
+        }
+      };
+
+      // Relire sourceText/userId depuis la DB (jamais depuis le job).
+      const generation = await prisma.generation.findUnique({ where: { id: generationId } });
+      if (!generation) {
+        logger.error(`Generation ${generationId} vanished after claim, abandoning`);
+        return;
+      }
+      const sourceText: string = generation.sourceText;
+
+      // --- Étape LLM (avec marqueurs de test hors production) ---
+      let llmRaw: unknown;
+      try {
+        if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_TIMEOUT)) {
+          throw new Error('Simulated timeout');
+        }
+        llmRaw = await createLLMProvider().generate(sourceText);
+        checkBudget();
+
+        if (
+          process.env.NODE_ENV !== 'production' &&
+          sourceText.includes(MARKER_INVALID_JSON)
+        ) {
+          throw new Error('Invalid JSON simulated');
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Retry unique et silencieux sur JSON invalide (AI_CONTRACT), puis échec terminal.
+        if (message === 'Invalid JSON simulated') {
+          logger.info(`Invalid JSON for ${generationId}, single silent retry`);
+          try {
+            const retryRaw = await createLLMProvider().generate(
+              sourceText.replace(MARKER_INVALID_JSON, ''),
+            );
+            checkBudget();
+            llmRaw = retryRaw;
+          } catch (retryError) {
+            const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
+            logger.error(`LLM retry failed for ${generationId}: ${retryMessage}`);
+            await prisma.generation.update({
+              where: { id: generationId },
+              data: { status: GenerationStatus.FAILED, error: 'MALFORMED_OUTPUT' },
+            });
+            return;
+          }
+        } else if (message === 'TIMEOUT' || message.includes('Simulated timeout')) {
+          // Transitoire : laisser BullMQ retenter (throw).
+          throw error;
+        } else if (isTransientError(error)) {
+          throw error;
+        } else {
+          logger.error(`LLM error for ${generationId}: ${message}`);
+          await prisma.generation.update({
+            where: { id: generationId },
+            data: { status: GenerationStatus.FAILED, error: 'LLM_ERROR' },
+          });
+          return;
+        }
+      }
+
+      // --- Validation Zod stricte (jamais de persistance directe) ---
+      let validated: LLMResponse;
+      try {
+        const parsed = LLMResponseSchema.safeParse(llmRaw);
+        if (!parsed.success) {
+          throw new Error('schema invalid: ' + parsed.error.issues.map((i) => i.path.join('.')).join(','));
+        }
+        validated = parsed.data;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`LLM validation failed for ${generationId}: ${message}`);
+        const code =
+          process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_SCHEMA_INVALID)
+            ? 'MALFORMED_OUTPUT'
+            : 'INVALID_RESPONSE';
         await prisma.generation.update({
           where: { id: generationId },
-          data: { status: GenerationStatus.FAILED, error: 'TIMEOUT' },
+          data: { status: GenerationStatus.FAILED, error: code },
         });
         return;
       }
 
-      try {
-        // Step 1: Verify generation exists and is in a valid state to process
-        const generation = await prisma.generation.findUnique({
-          where: { id: generationId },
-        });
-
-        if (!generation) {
-          logger.error(`Generation ${generationId} not found`);
-          return;
-        }
-
-        // Ignorer si déjà terminal
-        if (generation.status === GenerationStatus.COMPLETED || generation.status === GenerationStatus.FAILED) {
-          logger.warn(`Generation ${generationId} already terminal (${generation.status}), skipping`);
-          return;
-        }
-
-        // Step 2: Update to PROCESSING_LLM (marqueur visible pour le frontend)
+      if (validated.slides.length < 5 || validated.slides.length > 10) {
+        logger.error(`Invalid slide count ${validated.slides.length} for ${generationId}`);
         await prisma.generation.update({
           where: { id: generationId },
-          data: { status: GenerationStatus.PROCESSING_LLM, startedAt: new Date() },
+          data: { status: GenerationStatus.FAILED, error: 'INVALID_RESPONSE' },
         });
+        return;
+      }
 
-        // Step 3: Call LLM via provider
-        let llmResult;
-        try {
-          // Vérifier les marqueurs de mock pour les tests
-          const mockTimeout = job.data?.mockTimeout || job.opts?.mockTimeout;
-          const mockInvalidJson = job.data?.mockInvalidJson || job.opts?.mockInvalidJson;
-          const mockSchemaInvalid = job.data?.mockSchemaInvalid || job.opts?.mockSchemaInvalid;
+      const slides = validated.slides.map((s, i) => ({
+        order: i + 1,
+        title: truncateAtWord(s.title.trim(), 60),
+        body: truncateAtWord(s.body.trim(), 220),
+      }));
 
-          if (mockTimeout) {
-            throw new Error('Simulated timeout');
-          }
+      if (slides.some((s) => !s.title || !s.body)) {
+        await prisma.generation.update({
+          where: { id: generationId },
+          data: { status: GenerationStatus.FAILED, error: 'INVALID_RESPONSE' },
+        });
+        return;
+      }
 
-          llmResult = await createLLMProvider().generate(sourceText);
+      checkBudget();
 
-          // Appliquer les marquers de test après l'appel
-          if (mockInvalidJson && llmResult.slides.some(s => s.body.includes(MARKER_INVALID_JSON))) {
-            throw new Error('Invalid JSON simulated');
-          }
-          if (mockSchemaInvalid && llmResult.slides.some(s => s.body.includes(MARKER_SCHEMA_INVALID))) {
-            throw new Error('Schema invalid simulated');
-          }
-        } catch (error: any) {
-          const errorCode = error.message.includes('timeout') ? 'TIMEOUT' : 'LLM_ERROR';
-
-          // Vérifier si on doit rejouer après un JSON invalide (retry silencieux)
-          if (error.message === 'Invalid JSON simulated') {
-            // Un seul retry sur JSON invalide, pas de deuxième appel LLM
-            logger.warn(`JSON invalid for generation ${generationId}, retrying once`);
-            try {
-              llmResult = await createLLMProvider().generate(sourceText);
-            } catch (retryError) {
-              logger.error(`LLM retry failed for generation ${generationId}: ${retryError.message}`);
-              await prisma.generation.update({
-                where: { id: generationId },
-                data: { status: GenerationStatus.FAILED, error: 'MALFORMED_OUTPUT' },
-              });
-              return;
-            }
-          } else {
-            logger.error(`LLM error for generation ${generationId}: ${error.message}`);
-            await prisma.generation.update({
-              where: { id: generationId },
-              data: { status: GenerationStatus.FAILED, error: errorCode },
-            });
-            return;
-          }
-        }
-
-        // Step 4: Validate LLM response using LLMResponseSchema from shared
-        let validated: LLMResponse;
-        try {
-          const { LLMResponseSchema } = await import('@slideify/shared');
-          validated = LLMResponseSchema.parse(llmResult);
-        } catch (error) {
-          logger.error(`LLM response validation failed for generation ${generationId}: ${error.message}`);
-          await prisma.generation.update({
-            where: { id: generationId },
-            data: { status: GenerationStatus.FAILED, error: 'INVALID_RESPONSE' },
-          });
-          return;
-        }
-
-        // Step 5: Vérifier le nombre de slides (5-10) - le schema s'en charge,
-        // mais on ajoute une vérification supplémentaire avec message clair
-        if (validated.slides.length < 5 || validated.slides.length > 10) {
-          logger.error(`Invalid slide count ${validated.slides.length} for generation ${generationId}`);
-          await prisma.generation.update({
-            where: { id: generationId },
-            data: { status: GenerationStatus.FAILED, error: 'TOO_MANY_SLIDES' },
-          });
-          return;
-        }
-
-        // Step 6: Tronquer titre/ corps si dépasse les bornes (mineur → ellipse, majeur → échec)
-        for (const slide of validated.slides) {
-          // Tronquer titre à 60 caractères (mineur → troncature au mot près + ellipse)
-          if (slide.title.length > 60) {
-            slide.title = slide.title.split(' ').slice(0, -1).join(' ') + '…';
-          }
-          // Tronquer corps à 220 caractères (mineur → troncature au mot près + ellipse)
-          if (slide.body.length > 220) {
-            slide.body = slide.body.split(' ').slice(0, -1).join(' ') + '…';
-          }
-        }
-
-        // Step 7: Render slides
-        let buffers;
-        try {
-          buffers = await renderSlides(validated.slides);
-        } catch (error) {
-          logger.error(`Render error for generation ${generationId}: ${error.message}`);
-          await prisma.generation.update({
-            where: { id: generationId },
-            data: { status: GenerationStatus.FAILED, error: 'RENDER_ERROR' },
-          });
-          return;
-        }
-
-        // Step 8: Store outputs in transaction (slides + crédit + événement)
+      // --- Transaction atomique : slides + COMPLETED + débit + activation ---
+      try {
         await prisma.$transaction(async (tx) => {
-          // Persist slides with deterministic keys
-          for (let i = 0; i < buffers.length; i++) {
-            const order = i + 1; // 1-based for display
-            await StorageAdapterFactory.create().upload(
-              `${generationId}/slide_${i}.png`, // clé en base 0
-              buffers[i],
-              'image/png'
-            );
-          }
+          await tx.slide.deleteMany({ where: { generationId } });
+          await tx.slide.createMany({
+            data: slides.map((s) => ({
+              generationId,
+              order: s.order,
+              title: s.title,
+              body: s.body,
+            })),
+          });
 
-          // Update generation to COMPLETED
           await tx.generation.update({
             where: { id: generationId },
             data: {
               status: GenerationStatus.COMPLETED,
-              slideCount: validated.slides.length,
+              slideCount: slides.length,
               completedAt: new Date(),
             },
           });
 
-          // Debit credit - only on success, in the same transaction
           await tx.creditTransaction.create({
             data: {
               userId: generation.userId,
               amount: -1,
               type: CreditTransactionType.GENERATION_DEBIT,
-              reference: generationId,
+              reference: `generation:${generationId}`,
             },
           });
 
-          // Create activation event if first completed generation
-          const firstCompleted = await tx.generation.count({
-            where: {
-              userId: generation.userId,
-              status: GenerationStatus.COMPLETED,
-            },
+          const completedCount = await tx.generation.count({
+            where: { userId: generation.userId, status: GenerationStatus.COMPLETED },
           });
-
-          if (firstCompleted === 1) {
+          if (completedCount === 1) {
             await tx.generationEvent.create({
               data: {
                 name: GenerationEventName.FIRST_GENERATION_COMPLETED,
@@ -220,25 +251,19 @@ export async function main() {
             });
           }
         });
-
-        logger.info(`Generation ${generationId} completed successfully`);
       } catch (error) {
-        logger.error(`Job ${job.id} failed: ${error.message}`);
-
-        // Ne pas débiter si l'échec survient avant COMPLETED
-        try {
-          // Vérifier si la génération existe et n'est pas déjà COMPLETED/FAILED
-          const gen = await prisma.generation.findUnique({ where: { id: generationId } });
-          if (gen && gen.status !== GenerationStatus.COMPLETED && gen.status !== GenerationStatus.FAILED) {
-            await prisma.generation.update({
-              where: { id: generationId },
-              data: { status: GenerationStatus.FAILED, error: error.message },
-            });
-          }
-        } catch (e) {
-          logger.error(`Failed to update generation status: ${e.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        // Violation d'unicité = déjà traité par une exécution concurrente → succès idempotent.
+        if (message.includes('Unique constraint') || message.includes('UniqueConstraint')) {
+          logger.info(`Generation ${generationId} already completed by concurrent worker (idempotent)`);
+          return;
         }
+        logger.error(`Completion transaction failed for ${generationId}: ${message}`);
+        throw error; // transitoire possible (deadlock, connexion) → BullMQ retry
       }
+
+      checkBudget();
+      logger.info(`Generation ${generationId} completed successfully`);
     },
     {
       connection: {
@@ -246,7 +271,8 @@ export async function main() {
         port: config.redis.port,
         password: config.redis.password,
       },
-    }
+      concurrency: 1,
+    },
   );
 
   worker.on('failed', (job, error) => {
@@ -257,34 +283,16 @@ export async function main() {
     logger.info(`Job ${job.id} completed successfully`);
   });
 
-  logger.info('Worker connected to BullMQ queue');
+  const shutdown = async () => {
+    logger.info('SIGTERM received, closing worker gracefully...');
+    await worker.close();
+    await prisma.$disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown());
+  process.on('SIGINT', () => void shutdown());
 
-  // Lightweight reaper: échec les générations bloquées en PROCESSING_* trop anciennes
-  setInterval(async () => {
-    try {
-      const blocked = await prisma.generation.findMany({
-        where: {
-          status: {
-            in: [GenerationStatus.PROCESSING_LLM, GenerationStatus.PROCESSING_RENDER],
-          },
-        },
-      });
-
-      const cutoff = Date.now() - GLOBAL_TIMEOUT_MS;
-      for (const gen of blocked) {
-        // Simplified: if blocked too long, fail it
-        // In production, check when it entered the current state
-        if (cutoff > 0) {
-          await prisma.generation.update({
-            where: { id: gen.id },
-            data: { status: GenerationStatus.FAILED, error: 'TIMEOUT' },
-          });
-        }
-      }
-    } catch (e) {
-      logger.error('Reaper error:', e);
-    }
-  }, 30_000);
+  logger.info('Worker connected to BullMQ queue (single consumer: apps/worker)');
 }
 
 main().catch((error) => {

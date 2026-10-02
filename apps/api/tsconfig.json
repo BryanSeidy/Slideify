@@ -1,0 +1,34 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "paths": {
+      "@slideify/shared": [
+        "../../packages/shared/src"
+      ],
+      "@slideify/config": [
+        "../../packages/config/src"
+      ],
+      "@slideify/llm": [
+        "../../packages/llm/src"
+      ],
+      "@slideify/renderer": [
+        "../../packages/renderer/src"
+      ],
+      "@slideify/schema": [
+        "../../packages/schema/src"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts"
+  ]
+}

@@ -1,5 +1,5 @@
-import { Slide, LLMResponse, LLMProvider } from '@slideify/shared';
-import { config } from '@slideify/config';
+import type { Slide, LLMResponse } from '@slideify/shared';
+import type { LLMProvider } from './index';
 
 // Marqueurs de test (uniquement actifs en développement, jamais en production)
 const MARKER_TIMEOUT = '__MOCK_TIMEOUT__';
@@ -27,7 +27,7 @@ export class MockProvider implements LLMProvider {
       const start = i * chunkSize;
       const end = start + chunkSize;
       const chunkWords = words.slice(start, end);
-      const text = chunkWords.join(' ');
+      const text = chunkWords.join(' ').trim() || 'Point important à retenir';
 
       slides.push({
         order: i + 1,

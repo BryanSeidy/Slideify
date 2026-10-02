@@ -7,10 +7,11 @@ export function countWords(text: string): number {
 }
 
 // ---- Slide schema (PROMPTS.md contract) ----
+// trim() avant min(1) : un titre/espace blanc seul est invalide (AO-10).
 export const SlideSchema = z.object({
   order: z.number().int().min(1).max(10),
-  title: z.string().min(1).max(60),
-  body: z.string().min(1).max(220),
+  title: z.string().trim().min(1).max(60),
+  body: z.string().trim().min(1).max(220),
 });
 
 // ---- LLM response schema ----
@@ -27,21 +28,34 @@ export type Slide = z.infer<typeof SlideSchema>;
 export type LLMResponse = z.infer<typeof LLMResponseSchema>;
 
 // ---- Generation input ----
-// Le seuil est exprimé en mots (80–3000).
-// On stocke le texte brut ; la validation front/revalide serveur comptent en mots.
+// Bornes métier en MOTS (80–3000), pas en caractères.
+// z.string().min/max compte des caractères : inutilisable ici.
+// On valide via countWords(), fonction unique partagée front/back (§13).
 export const GenerationInputSchema = z.object({
-  sourceText: z
-    .string()
-    .min(80, 'Texte trop court — minimum 80 mots')
-    .max(3000, 'Texte trop long — maximum 3000 mots'),
+  sourceText: z.string().superRefine((val, ctx) => {
+    const words = countWords(val);
+    if (words < 80) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Texte trop court — minimum 80 mots',
+      });
+    }
+    if (words > 3000) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Texte trop long — maximum 3000 mots',
+      });
+    }
+  }),
 });
 
 export type GenerationInput = z.infer<typeof GenerationInputSchema>;
 
 // ---- Generation job payload ----
+// Contrat réel M004 : seul generationId transite par BullMQ.
+// Le worker relit sourceText/userId depuis PostgreSQL (SC-07, AZ-06).
 export const GenerationJobSchema = z.object({
   generationId: z.string(),
-  sourceText: z.string(),
 });
 
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;

@@ -44,6 +44,9 @@ export class AuthService {
 
   async login(userId: string, email: string): Promise<{ accessToken: string; userId: string; email: string; credits: number }> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error('User not found');
+    }
 
     const balance = await this.prisma.creditTransaction.aggregate({
       _sum: { amount: true },

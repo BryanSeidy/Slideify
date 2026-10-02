@@ -6,17 +6,19 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "ts-node --watch src/index.ts",
-    "build": "tsc -b",
-    "typecheck": "tsc -b --noEmit"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@slideify/config": "workspace:",
+    "@slideify/llm": "workspace:",
+    "@slideify/schema": "workspace:",
+    "@slideify/shared": "workspace:",
     "bullmq": "^5.23.11",
     "ioredis": "^5.4.0",
-    "typescript": "^5.5.0",
-    "@slideify/shared": "workspace:",
-    "@slideify/llm": "workspace:",
-    "@slideify/renderer": "workspace:",
-    "@slideify/config": "workspace:",
-    "@slideify/schema": "workspace:"
+    "typescript": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43"
   }
 }

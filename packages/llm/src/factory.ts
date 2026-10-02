@@ -1,4 +1,4 @@
-import { LLMProvider } from './index';
+import type { LLMProvider } from './index';
 import { config } from '@slideify/config';
 import { MockProvider } from './providers';
 

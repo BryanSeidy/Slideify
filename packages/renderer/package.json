@@ -5,9 +5,8 @@
   "types": "dist/index.d.ts",
   "private": true,
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --noEmit",
-    "test": "npx jest --testPathPattern=tests"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@slideify/shared": "workspace:",

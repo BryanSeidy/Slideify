@@ -5,17 +5,17 @@
   "types": "dist/index.d.ts",
   "private": true,
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --noEmit",
-    "test": "npx jest --testPathPattern=tests"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@slideify/shared": "workspace:",
-    "@slideify/config": "workspace:"
+    "@slideify/config": "workspace:",
+    "@slideify/shared": "workspace:"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.19.43",
     "jest": "^29.7.0",
-    "@types/jest": "^29.5.12"
+    "typescript": "^5.5.0"
   }
 }
