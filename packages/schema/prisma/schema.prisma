@@ -12,16 +12,14 @@ datasource db {
 }
 
 model User {
-  id                 String               @id @default(cuid())
-  email              String               @unique
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   creditTransactions CreditTransaction[]
   generations        Generation[]
   events             GenerationEvent[]
-
-  @@index [email]
 }
 
 model CreditTransaction {
@@ -30,12 +28,13 @@ model CreditTransaction {
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   amount    Int                   // positif = crédit, négatif = débit
   type      CreditTransactionType
-  reference String?               // generation id, session Stripe id
+  reference String?               // generation:<generationId>, signup_bonus, stripe session id
   metadata  Json?
   createdAt DateTime              @default(now())
 
-  @@index [userId]
-  @@index [createdAt]
+  @@unique([userId, type, reference])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 enum CreditTransactionType {
@@ -47,24 +46,37 @@ enum CreditTransactionType {
 }
 
 model Generation {
-  id          String            @id @default(cuid())
+  id          String           @id @default(cuid())
   userId      String
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sourceText  String
-  status      GenerationStatus  @default(QUEUED)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceText  String           @db.Text
+  status      GenerationStatus @default(QUEUED)
   slideCount  Int?
   error       String?
   startedAt   DateTime?
   completedAt DateTime?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   outputs     Output[]
-  events      GenerationEvent[]
+  slides      Slide[]
 
-  @@index [userId]
-  @@index [status]
-  @@index [createdAt]
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Slide {
+  id           String     @id @default(cuid())
+  generationId String
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  order        Int
+  title        String     @db.VarChar(60)
+  body         String     @db.VarChar(220)
+  createdAt    DateTime   @default(now())
+
+  @@unique([generationId, order])
+  @@index([generationId])
 }
 
 enum GenerationStatus {
@@ -76,17 +88,17 @@ enum GenerationStatus {
 }
 
 model Output {
-  id            String         @id @default(cuid())
-  generationId  String
-  generation    Generation     @relation(fields: [generationId], references: [id], onDelete: Cascade)
-  format        OutputFormat
-  url           String
-  expiresAt     DateTime
-  size          Int
-  createdAt     DateTime       @default(now())
+  id           String       @id @default(cuid())
+  generationId String
+  generation   Generation   @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  format       OutputFormat
+  url          String
+  expiresAt    DateTime
+  size         Int
+  createdAt    DateTime     @default(now())
 
-  @@index [generationId]
-  @@index [expiresAt]
+  @@index([generationId])
+  @@index([expiresAt])
 }
 
 enum OutputFormat {
@@ -103,20 +115,21 @@ model GenerationEvent {
   metadata  Json?
   createdAt DateTime @default(now())
 
-  @@index [actorId]
-  @@index [name]
-  @@index [createdAt]
+  @@index([actorId])
+  @@index([name])
+  @@index([createdAt])
 }
 
 model WebhookEvent {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   provider      String
+  eventId       String    // provider-side event id (Stripe event id) for idempotency
   eventType     String
   payload       Json
-  processed     Boolean  @default(false)
+  processed     Boolean   @default(false)
   processedAt   DateTime?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime  @default(now())
 
-  @@unique [provider, id]  // idempotency by Stripe event ID only
-  @@index [processed]
+  @@unique([provider, eventId])
+  @@index([processed])
 }

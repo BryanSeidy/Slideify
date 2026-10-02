@@ -5,18 +5,19 @@
   "types": "dist/index.d.ts",
   "private": true,
   "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev --create-only"
   },
   "dependencies": {
     "@prisma/client": "^5.21.0",
-    "prisma": "^5.21.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "prisma": "^5.21.0"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "typescript": "^5.5.0"
   }
 }
