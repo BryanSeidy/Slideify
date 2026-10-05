@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "@slideify/config": "workspace:",
     "@slideify/llm": "workspace:",
     "@slideify/schema": "workspace:",

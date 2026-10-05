@@ -21,6 +21,8 @@ module.exports = {
           esModuleInterop: true,
           skipLibCheck: true,
           strict: false,
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
           baseUrl: '.',
           paths: {
             '@slideify/shared': ['./packages/shared/src'],

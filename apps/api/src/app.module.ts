@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { BullMQModule } from './bullmq/bullmq.module';
 import { GenerationModule } from './generation/generation.module';
-import { JwtModuleNest } from './auth/jwt.module';
+import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -14,7 +14,7 @@ import { HealthController } from './health/health.controller';
     }),
     PrismaModule,
     BullMQModule,
-    JwtModuleNest,
+    AuthModule,
     GenerationModule,
   ],
   controllers: [HealthController],
