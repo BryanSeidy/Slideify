@@ -9,29 +9,43 @@ function assertEmail(email: unknown): asserts email is string {
   }
 }
 
+function assertPassword(password: unknown): asserts password is string {
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+    throw new BadRequestException({
+      code: 'INVALID_PASSWORD',
+      message: 'Le mot de passe doit contenir entre 8 et 128 caractères.',
+    });
+  }
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('magic-link')
-  @HttpCode(202)
-  @ApiOperation({ summary: 'Request a magic link (creates the account on first use)' })
-  async sendMagicLink(@Body('email') email: string) {
+  @Post('register')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Create an account (email + password). Does not log in.' })
+  @ApiResponse({ status: 201, description: 'Account created with welcome credits' })
+  @ApiResponse({ status: 400, description: 'Invalid email or password' })
+  @ApiResponse({ status: 409, description: 'Email already registered' })
+  async register(@Body('email') email: string, @Body('password') password: string) {
     assertEmail(email);
-    const result = await this.authService.authenticateWithMagicLink(email);
-    return { message: 'Lien envoyé', userId: result.userId };
+    assertPassword(password);
+    const result = await this.authService.register(email, password);
+    return result;
   }
 
   @Post('login')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Register-or-login with email, returns a JWT' })
+  @ApiOperation({ summary: 'Log in with email + password, returns a JWT' })
   @ApiResponse({ status: 200, description: 'JWT issued' })
-  @ApiResponse({ status: 400, description: 'Invalid email' })
-  async login(@Body('email') email: string) {
+  @ApiResponse({ status: 400, description: 'Invalid input' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials (email and password are both required and verified)' })
+  async login(@Body('email') email: string, @Body('password') password: string) {
     assertEmail(email);
-    const identified = await this.authService.authenticateWithMagicLink(email);
-    return this.authService.login(identified.userId, identified.email);
+    assertPassword(password);
+    return this.authService.login(email, password);
   }
 
   @UseGuards(JwtAuthGuard)
