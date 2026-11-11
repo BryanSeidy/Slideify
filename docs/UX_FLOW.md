@@ -1,5 +1,7 @@
 # UX_FLOW.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Statut de ce document
 
 Version d'exécution de `docs/UX.md` (V1). Reprend les 6 écrans déjà définis et les rend **implémentables directement** en liant chaque état d'UI à un code exact (`errorCode` / `status`) défini dans `PRODUCT_SPEC_V2.md` et `GENERATION_SPEC.md`. Aucun texte d'erreur ne doit être inventé à l'implémentation en dehors de la table §3.

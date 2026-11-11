@@ -1,5 +1,7 @@
 # PRODUCT_SPEC_V2.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Statut de ce document
 
 Version consolidée et exécutable des décisions produit. Ce document est **auto-suffisant** : OpenCode ne devrait pas avoir besoin d'interpréter une intention non écrite ici. Il supersede la partie "produit" de `docs/PRODUCT.md` (V1) sur les points où il est plus précis ; `docs/PRODUCT.md` reste valide pour le narratif de vision. `docs/UX.md`, `docs/ACCEPTANCE.md`, `docs/BACKLOG.md` (V1) restent en vigueur et sont complétés par `UX_FLOW.md`, `GENERATION_SPEC.md`, `AI_PROMPT_SPEC.md` (V2) pour le détail d'exécution.

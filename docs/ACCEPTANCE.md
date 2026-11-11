@@ -1,5 +1,7 @@
 # ACCEPTANCE.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Rôle de ce document
 
 Critères d'acceptation par feature P0, format Given/When/Then. Une feature n'est **livrable** que si tous ses critères sont vérifiés, y compris les cas d'erreur — un happy path qui marche seul ne suffit pas.

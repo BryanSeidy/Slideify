@@ -1,5 +1,7 @@
 # GENERATION_SPEC.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Statut de ce document
 
 Spécification d'exécution du pipeline de génération. Destiné à être implémenté tel quel — les noms de champs, types, et transitions d'état ci-dessous sont les noms à utiliser dans le code (migrations Prisma, DTOs NestJS), pas des exemples illustratifs.

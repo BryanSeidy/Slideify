@@ -1,5 +1,7 @@
 # BACKLOG.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Rôle de ce document
 
 Backlog **au niveau feature/produit**, priorisé. Différent de `docs/TASKS.md`, qui suit les tâches d'implémentation technique — chaque item P0 ci-dessous se décompose en une ou plusieurs `TASK-xxx`. Ce document est la source de vérité du **quoi** et du **pourquoi prioriser**, `TASKS.md` reste la source de vérité du **statut d'avancement technique**.

@@ -1,5 +1,7 @@
 # AI_PROMPT_SPEC.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Statut de ce document
 
 Spécification exacte de la couche IA. Supersede et détaille `docs/PROMPTS.md` (V1) — les règles ci-dessous font foi en cas de divergence. Rien dans le worker ne doit contenir de prompt ou de règle de validation qui ne soit pas défini ici.
