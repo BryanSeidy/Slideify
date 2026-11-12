@@ -73,3 +73,19 @@
 - **Decision** : Structure monorepo avec package.json racine + packages/
 - **Reason** : Partage de types, installation unique, husky/lint cohérent
 - **Consequences ** : Configuration initiale, cache workspace
+
+### ADR-010
+**Abstraction PaymentProvider (paiement)**
+
+- **Context** : Les spécifications V1/V2 supposaient Stripe Checkout. Stripe n'ouvre des comptes marchands que dans une liste limitée de pays ; le Cameroun n'apparaît pas dans les sources consultées (il n'y figure que pour Stripe Tax). À confirmer par l'owner sur la page officielle de disponibilité de Stripe. Le choix d'un fournisseur dépend de l'entité qui encaisse, de l'audience et du prix, qui sont des décisions de l'owner. Budget 0 € en développement (ADR-008) : aucun paiement réel avant la production.
+- **Decision** : Une interface `PaymentProvider` (création d'un paiement hébergé, vérification d'une transaction, lecture d'un événement de paiement), sur le modèle de `LLMProvider` (ADR-007). Sélection par `PAYMENT_PROVIDER` : `mock` (défaut hors production) ou le fournisseur retenu. Un seul fournisseur actif au lancement. Checkout hébergé par le fournisseur. Une commande est enregistrée avant la redirection. Les crédits ne sont ajoutés qu'après **vérification serveur** de la transaction, sous forme d'une ligne de ledger `PURCHASE` dont la référence est l'identifiant de transaction (unicité globale, idempotence). Le montant crédité vient de la configuration du pack. Démarrage refusé en production sans configuration réelle, sans repli vers le mock.
+- **Reason** : Le reste du produit (ledger, écrans, événements) ne dépend pas du fournisseur ; changer de fournisseur ou ajouter Stripe plus tard se limite à un adaptateur. Le mock permet de tester succès, annulation, échec et confirmation retardée sans argent réel.
+- **Consequences** : Choix du fournisseur et ouverture du compte marchand à la charge de l'owner (O-1, délai de vérification possible de plusieurs jours). Ajout du type de ledger `PURCHASE` (migration additive, jalon M010). Table de commandes et table d'événements de paiement à prévoir. Les variables `PAYMENT_*` de `.env.example` restent génériques. Statut : interface acceptée ; fournisseur à trancher.
+
+### ADR-011
+**Authentification par email et mot de passe (JWT)**
+
+- **Context** : Les spécifications V1/V2 prévoyaient un magic link (Supabase Auth). Le red team M004.2 a démontré qu'une route de connexion par email seul permettait de prendre le contrôle de n'importe quel compte. M004.3 a supprimé les magic links et adopté email + mot de passe.
+- **Decision** : `POST /auth/register` (201, sans jeton) et `POST /auth/login` (JWT HS256 après `bcrypt.compare`). Les 3 crédits gratuits sont écrits dans la **même transaction que la création du compte** (`MANUAL_GRANT`, référence `signup_bonus`). **Aucune route ne délivre un JWT sur la seule base d'un email.** Email normalisé (espaces retirés, minuscules) avant unicité. `AUTH_SECRET` de 32 caractères minimum. Mot de passe de 8 à 72 octets.
+- **Reason** : Aucun fournisseur d'envoi d'email n'est disponible à budget 0 €. La connexion par email seul est une faille critique. Les crédits gratuits atomiques avec la création du compte évitent un second chemin d'attribution.
+- **Consequences** : Supabase Auth n'est plus utilisé pour l'authentification (Supabase peut rester l'hébergeur PostgreSQL et du stockage). **Pas de vérification d'email ni de récupération de mot de passe** au lancement doux (réinitialisation manuelle) ; décision O-6 avant l'ouverture publique, avec le coût décrit dans `M006` §4.4. Limitation de débit sur `/auth/*`, bcrypt à 12 et JWT de 24 h avec refresh requis avant l'ouverture publique (porte E). Le farming de crédits par comptes multiples reste possible tant que la vérification d'email n'existe pas.
