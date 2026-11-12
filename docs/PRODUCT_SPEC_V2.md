@@ -1,6 +1,6 @@
 # PRODUCT_SPEC_V2.md
 
-> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
 
 ## Statut de ce document
 
@@ -15,7 +15,7 @@ Version consolidée et exécutable des décisions produit. Ce document est **aut
 Parcours de bout en bout, au-delà du seul flux de génération (déjà couvert par `UX_FLOW.md`) :
 
 1. **Découverte** — l'utilisateur arrive sur la landing (hors périmètre de ce document : landing marketing = P1/growth, pas un blocker MVP techniquement, mais l'accès direct à `/app` doit fonctionner sans landing si nécessaire)
-2. **Inscription** — email → magic link → compte créé automatiquement avec 3 crédits gratuits (aucune étape d'onboarding, aucun formulaire de profil)
+2. **Inscription** — email + mot de passe → compte créé avec 3 crédits gratuits attribués dans la même transaction (aucune étape d'onboarding, aucun formulaire de profil)
 3. **Première intention** — arrivée sur le Dashboard vide, CTA unique "Créer mon premier carrousel"
 4. **Première génération (intent)** — saisie du texte, lancement
 5. **Moment de vérité (activation)** — réception du premier carrousel généré avec succès. C'est **l'événement d'activation du produit** (voir §13)
@@ -32,7 +32,7 @@ Chaque étape correspond à un événement journalisé (§13, Activation funnel)
 
 Rien n'est implémenté en dehors de cette liste sans mise à jour explicite de ce document.
 
-- [ ] Auth par magic link (Supabase Auth)
+- [ ] Auth email + mot de passe (JWT, bcrypt — M004.3, ADR-011)
 - [ ] Attribution automatique de 3 crédits gratuits à l'inscription
 - [ ] Écran de saisie de texte brut (unique type d'entrée, voir §4)
 - [ ] Validation de bornes de longueur (50 à 3000 mots, voir §4)
@@ -42,7 +42,7 @@ Rien n'est implémenté en dehors de cette liste sans mise à jour explicite de 
 - [ ] Stockage des assets (Supabase Storage, tier gratuit)
 - [ ] Historique des générations avec statuts (voir `GENERATION_SPEC.md` §Historique)
 - [ ] Décompte du crédit uniquement au succès complet d'une génération
-- [ ] Achat de crédits via Stripe Checkout (paiement unique, un seul pack proposé)
+- [ ] Achat de crédits via le checkout hébergé du PaymentProvider (ADR-010) (paiement unique, un seul pack proposé)
 - [ ] Journalisation des événements d'activation en base (table `events`, voir §13)
 
 **Explicitement exclu du MVP** (rappel, cf. `docs/BACKLOG.md` pour le détail P1/P2) : import URL, légendes/hashtags générés, choix de template, abonnement récurrent, marque personnalisée, édition post-génération, API publique, analytics tiers.
@@ -123,7 +123,7 @@ Catalogue canonique unique (utilisé par `GENERATION_SPEC.md` et `UX_FLOW.md`, �
 | `ERR_RENDER_FAILED` | Échec Puppeteer | Non |
 | `ERR_STORAGE_FAILED` | Échec upload Supabase Storage | Non |
 | `ERR_LINK_EXPIRED` | Lien de téléchargement expiré | N/A (post-succès) |
-| `ERR_PAYMENT_SESSION_FAILED` | Échec création session Stripe Checkout | N/A |
+| `ERR_PAYMENT_SESSION_FAILED` | Échec de création du paiement chez le PaymentProvider | N/A |
 
 ### États de chargement (`status` de génération)
 
@@ -150,7 +150,7 @@ Voir `GENERATION_SPEC.md` §Historique pour le modèle de données et la paginat
 
 ## 11. Free plan (exact, verrouillé)
 
-- **3 crédits gratuits** attribués automatiquement à la création de compte (déclenché par la première connexion via magic link, pas à l'envoi de l'email)
+- **3 crédits gratuits** attribués automatiquement à la création de compte (attribués atomiquement à l'inscription, dans la même transaction que la création du compte — D-11)
 - **Pas de renouvellement mensuel** — les 3 crédits sont un capital unique, à vie, pour le compte
 - Aucune autre limite fonctionnelle sur le free plan (même template, même qualité de rendu, même vitesse de traitement que le plan payant — la seule différence est le nombre de crédits)
   - *Justification* : ne pas dégrader l'expérience du free plan protège la perception qualité dès le premier usage, qui est le critère de succès du MVP (`docs/PRODUCT.md`)
@@ -192,13 +192,13 @@ Event {
 | `type` | Déclencheur |
 |---|---|
 | `signup_started` | Email soumis sur l'écran Auth |
-| `signup_confirmed` | Premier clic sur un magic link valide |
+| `signup_confirmed` | Compte créé (inscription réussie) |
 | `generation_started` | Job créé (statut `QUEUED`) |
 | `generation_activated` | Premier passage à `COMPLETED` d'un compte (événement d'activation, ne se déclenche qu'une fois par utilisateur) |
 | `generation_completed` | Chaque passage à `COMPLETED` (y compris au-delà du premier) |
 | `generation_failed` | Chaque passage à `FAILED`, avec `errorCode` en `metadata` |
 | `download_clicked` | Clic sur "Télécharger ZIP" ou "Télécharger PDF", avec le type en `metadata` |
 | `checkout_started` | Clic sur "Acheter" sur l'écran Achat |
-| `checkout_completed` | Webhook Stripe traité avec succès |
+| `checkout_completed` | Paiement vérifié côté serveur et crédité |
 
 **Aucun dashboard d'analytics n'est requis en P0** — cette table sert de socle de données brutes, exploitable plus tard (P1/P2) sans dette technique de ré-instrumentation.

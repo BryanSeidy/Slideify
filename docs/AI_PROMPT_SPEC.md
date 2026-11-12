@@ -1,6 +1,6 @@
 # AI_PROMPT_SPEC.md
 
-> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
 
 ## Statut de ce document
 
@@ -91,19 +91,17 @@ Ces marqueurs ne doivent **jamais** être documentés ou exposés dans l'UI — 
 
 ---
 
-## 5. Validation de la réponse (identique quel que soit le provider)
+## 5. Validation de la réponse (identique quel que soit le provider) — révisé M006.1
 
-Ordre des contrôles, appliqué par le worker après réception de la réponse (`LLMResponse` ou échec du provider) :
+Référence normative : `M006_DECISIONS_AND_LAUNCH.md` §4.2 (validation) et §4.3 (retries). Résumé :
 
-1. **Parsing JSON** (uniquement pertinent pour `OpenRouterProvider`, le `MockProvider` retourne déjà un objet typé sauf en mode `__MOCK_INVALID_JSON__`)
-   - Échec → un seul retry avec le prompt de correction ci-dessous
-   - Second échec → `FAILED`, `ERR_AI_INVALID_RESPONSE`
-2. **Présence du schéma** : `slides` (array non vide) et `meta` présents
-3. **Bornes** :
-   - `slides.length` entre 5 et 10 → sinon `FAILED`, `ERR_AI_SCHEMA_INVALID`
-   - chaque `title` ≤ 60 caractères → si dépassement mineur, troncature automatique (dernier mot complet + ellipse), pas d'échec
-   - chaque `body` ≤ 220 caractères → même règle de troncature automatique
-4. **Cohérence des `order`** : séquence continue de 1 à N, sans doublon ni trou → sinon `FAILED`, `ERR_AI_SCHEMA_INVALID`
+1. **JSON non parsable** (provider réel ; marqueur `__MOCK_INVALID_JSON__` pour le mock) → **un seul retry** avec le prompt de correction ci-dessous, à l'intérieur de la même exécution (jamais via BullMQ). Second échec → `FAILED / INVALID_RESPONSE`.
+2. **Couche 1 — structure** (échec terminal, aucun retry) : `slides` absent, non tableau ou vide ; nombre de slides hors 5–10 ; slide non objet ; `title` ou `body` absent, `null`, non-chaîne, vide ou composé d'espaces ; `order` absent ou non entier ; `meta` absent ou mal typé → `FAILED / MALFORMED_OUTPUT`. Les champs inconnus sont retirés.
+3. **Couche 2 — longueurs** (tolérante) : `title` > 60 ou `body` > 220 → **troncature** au dernier mot entier + « … ». Au-delà du plafond de sécurité (`title` > 300 ou `body` > 1100) → `FAILED / MALFORMED_OUTPUT`.
+4. **`order`** : la position dans le tableau fait foi ; le serveur renumérote 1..N (D-17). Des valeurs dupliquées ou non contiguës ne font pas échouer.
+5. **`meta.source_language`** : la valeur ne fait jamais échouer (D-05).
+
+*Codes (catalogue canonique)* : `INVALID_RESPONSE` = JSON non parsable après le retry ; `MALFORMED_OUTPUT` = JSON valide mais structure ou bornes invalides. Les messages utilisateur sont identiques.
 
 ### Prompt de correction (retry, une seule tentative, `OpenRouterProvider` uniquement)
 

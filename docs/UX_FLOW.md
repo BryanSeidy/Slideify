@@ -1,6 +1,6 @@
 # UX_FLOW.md
 
-> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
 
 ## Statut de ce document
 
@@ -11,18 +11,38 @@ Version d'exécution de `docs/UX.md` (V1). Reprend les 6 écrans déjà définis
 ## 1. Flux canonique
 
 ```
-Auth (magic link)
+Auth (email + mot de passe)
   → Dashboard (historique + CTA nouvelle génération)
     → Générateur (saisie texte)
       → En cours (QUEUED → PROCESSING_AI → RENDERING)
         → Résultat (COMPLETED) → retour Dashboard
         → Erreur (FAILED) → retour Générateur (texte préservé)
-    → [si crédits = 0] → Achat (Stripe Checkout) → retour Générateur ou Dashboard
+    → [si crédits = 0] → Achat (checkout du PaymentProvider) → retour Générateur ou Dashboard
 ```
 
 Ce flux est strictement linéaire — aucun écran ne doit permettre de sauter une étape (ex. pas d'accès direct à "Résultat" sans passer par une génération réelle).
 
 ---
+
+## 1 bis. Écran Auth (M006.1 — remplace `UX.md` Écran 1, qui décrivait un magic link)
+
+L'authentification est **email + mot de passe** (M004.3, ADR-011). **Aucun login par email seul, aucun magic link.**
+
+- **Deux modes sur un même écran** : « Créer un compte » / « Se connecter », bascule par un lien. Champs : email, mot de passe.
+- **Validation côté client (miroir du serveur)** : email au format valide ; mot de passe de **8 à 72 octets** (le serveur tronque au-delà de 72 avec bcrypt ; le contrat est aligné sur cette limite).
+- **Inscription réussie** : l'API ne renvoie pas de jeton (par conception). Le front enchaîne **automatiquement** la connexion, puis ouvre le Dashboard avec l'indication « 3 crédits offerts ».
+- **Chargement** : bouton désactivé avec indicateur pendant l'appel ; pas de double soumission.
+- **Messages** (jamais de code technique) :
+
+| `code` | Message |
+|---|---|
+| `INVALID_INPUT` | « Vérifiez votre email et votre mot de passe (8 caractères minimum). » |
+| `EMAIL_TAKEN` | « Un compte existe déjà avec cet email. » + lien « Se connecter » |
+| `INVALID_CREDENTIALS` | « Email ou mot de passe incorrect. » (identique que l'email existe ou non) |
+| `UNAUTHENTICATED` (session expirée, sur n'importe quel écran) | Redirection vers l'écran Auth avec « Votre session a expiré. Reconnectez-vous. » |
+| erreur réseau / autre | « Une erreur est survenue. Réessayez. » |
+
+- **Pas de « Mot de passe oublié »** au lancement doux : la récupération de mot de passe n'existe pas (elle suppose l'envoi d'emails, voir `M006` §4.4 et O-6). Le support (réinitialisation manuelle) est indiqué sur l'écran.
 
 ## 2. UX du générateur (détail d'implémentation)
 
@@ -72,7 +92,7 @@ Chaque message d'erreur affiché doit être accompagné d'un bouton d'action uni
 | `RENDERING` | "Mise en page du carrousel…" |
 | `AUTH_LINK_SENDING` | (bouton en spinner, pas de libellé texte additionnel) |
 | `HISTORY_LOADING` | (skeleton loaders sur les cartes, pas de libellé texte) |
-| `CHECKOUT_SESSION_CREATING` | (spinner bref avant redirection Stripe) |
+| `CHECKOUT_SESSION_CREATING` | (spinner bref avant redirection vers le checkout du fournisseur) |
 | `ASSET_PREPARING` | "Préparation des fichiers…" (écran Résultat, avant activation des boutons de téléchargement) |
 
 Polling du statut de génération : intervalle de **2 secondes**, arrêté dès réception de `COMPLETED` ou `FAILED`. Pas de websocket en P0 (complexité non justifiée au volume MVP — le polling à 2s est indiscernable d'un push en pratique pour une génération de quelques secondes à ~1 minute).
@@ -99,9 +119,9 @@ Polling du statut de génération : intervalle de **2 secondes**, arrêté dès 
 
 ## 7. Écran Achat
 
-- Une seule offre visible (un seul pack de crédits, prix et quantité définis au moment de l'implémentation Stripe — hors périmètre produit de ce document)
-- CTA `"Acheter"` → création de session Stripe Checkout → redirection
-- Retour après annulation Stripe → retour silencieux à l'écran Achat, **aucun message d'erreur** (annulation ≠ échec)
+- Une seule offre visible (un seul pack de crédits, prix et quantité définis au moment de l'implémentation du paiement — hors périmètre produit de ce document)
+- CTA `"Acheter"` → création du paiement chez le fournisseur (checkout hébergé) → redirection
+- Retour après annulation du paiement → retour silencieux à l'écran Achat, **aucun message d'erreur** (annulation ≠ échec)
 - Retour après paiement confirmé mais webhook pas encore traité → état transitoire `"Confirmation du paiement en cours…"`, rafraîchissement automatique du solde de crédits par polling court (2s, même mécanisme que §4) jusqu'à mise à jour
 
 ---

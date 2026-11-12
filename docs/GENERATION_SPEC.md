@@ -1,6 +1,6 @@
 # GENERATION_SPEC.md
 
-> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-16, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350). En cas de conflit, M004, M005 et M006 prévalent.
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
 
 ## Statut de ce document
 
@@ -116,7 +116,7 @@ CreditTransaction {
   userId: uuid (FK → User)
   amount: integer (positif pour GRANT_FREE/PURCHASE, négatif pour CONSUMPTION)
   type: enum(GRANT_FREE, PURCHASE, CONSUMPTION)
-  reference: string (nullable — generationId si CONSUMPTION, stripeSessionId si PURCHASE)
+  reference: string (nullable — generationId si CONSUMPTION, identifiant de transaction du fournisseur de paiement si PURCHASE)
   createdAt: timestamp
 }
 ```
