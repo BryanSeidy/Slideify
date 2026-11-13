@@ -188,10 +188,12 @@ describe('P0 M004.3 — email alone never yields a JWT', () => {
 });
 
 describe('P0 M004.3 — protected routes use JWT identity only', () => {
-  it('getMe returns the JWT identity (no body userId exists)', async () => {
-    const { controller } = makeController();
-    const me = await controller.getMe({ user: { userId: 'u1', email: 'a@b.c', credits: 2 } });
-    expect(me).toEqual({ userId: 'u1', email: 'a@b.c', credits: 2 });
+  it('getMe lit les crédits depuis le ledger (pas du JWT)', async () => {
+    const { fake, controller } = makeController();
+    await controller.register('a@b.c', 'password123');
+    const userId = fake.users.values().next().value.id;
+    const me = await controller.getMe({ user: { userId, email: 'a@b.c', credits: 999 } });
+    expect(me).toEqual({ userId, email: 'a@b.c', credits: 3 });
   });
 
   it('JwtAuthGuard accepts a valid token and rejects missing/malformed/forged ones', () => {

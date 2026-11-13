@@ -16,7 +16,9 @@ const envSchema = z.object({
   OPENROUTER_SITE_URL: z.string().optional(),
   OPENROUTER_SITE_NAME: z.string().default('Slideify'),
 
-  AUTH_SECRET: z.string().min(1, 'AUTH_SECRET is required'),
+  AUTH_SECRET: z
+    .string()
+    .min(32, 'AUTH_SECRET doit contenir au moins 32 caractères'),
 
   STORAGE_ENDPOINT: z.string().optional(),
   STORAGE_BUCKET: z.string().optional(),

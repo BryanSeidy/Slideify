@@ -14,6 +14,9 @@
     "worker": "pnpm --filter worker start"
   },
   "devDependencies": {
+    "@nestjs/common": "^10.4.22",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/testing": "^10.4.22",
     "@prisma/client": "^5.22.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/jest": "^29.5.14",

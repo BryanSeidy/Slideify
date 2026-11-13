@@ -1,20 +1,37 @@
-import { Controller, Get, Post, Body, UseGuards, HttpCode, Req, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  HttpCode,
+  Req,
+  ConflictException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt.guard';
+import {
+  InvalidEmailError,
+  InvalidPasswordError,
+  EmailTakenError,
+} from '../common/errors/http-error';
 
 function assertEmail(email: unknown): asserts email is string {
   if (typeof email !== 'string' || !email.includes('@') || email.length > 320) {
-    throw new BadRequestException({ code: 'INVALID_EMAIL', message: 'Adresse email invalide.' });
+    throw new InvalidEmailError();
   }
 }
 
 function assertPassword(password: unknown): asserts password is string {
-  if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
-    throw new BadRequestException({
-      code: 'INVALID_PASSWORD',
-      message: 'Le mot de passe doit contenir entre 8 et 128 caractères.',
-    });
+  if (typeof password !== 'string') {
+    throw new InvalidPasswordError();
+  }
+  const bytes = Buffer.byteLength(password, 'utf8');
+  if (bytes < 8 || bytes > 72) {
+    throw new InvalidPasswordError(
+      'Le mot de passe doit contenir entre 8 et 72 octets UTF-8.',
+    );
   }
 }
 
@@ -25,23 +42,22 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(201)
-  @ApiOperation({ summary: 'Create an account (email + password). Does not log in.' })
-  @ApiResponse({ status: 201, description: 'Account created with welcome credits' })
-  @ApiResponse({ status: 400, description: 'Invalid email or password' })
-  @ApiResponse({ status: 409, description: 'Email already registered' })
+  @ApiOperation({ summary: 'Créer un compte (email + mot de passe). Ne connecte pas.' })
+  @ApiResponse({ status: 201, description: 'Compte créé avec crédits de bienvenue' })
+  @ApiResponse({ status: 400, description: 'Email ou mot de passe invalide' })
+  @ApiResponse({ status: 409, description: 'Email déjà enregistré' })
   async register(@Body('email') email: string, @Body('password') password: string) {
     assertEmail(email);
     assertPassword(password);
-    const result = await this.authService.register(email, password);
-    return result;
+    return this.authService.register(email, password);
   }
 
   @Post('login')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Log in with email + password, returns a JWT' })
-  @ApiResponse({ status: 200, description: 'JWT issued' })
-  @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 401, description: 'Invalid credentials (email and password are both required and verified)' })
+  @ApiOperation({ summary: 'Se connecter avec email + mot de passe, retourne un JWT' })
+  @ApiResponse({ status: 200, description: 'JWT délivré' })
+  @ApiResponse({ status: 400, description: 'Input invalide' })
+  @ApiResponse({ status: 401, description: 'Identifiants invalides' })
   async login(@Body('email') email: string, @Body('password') password: string) {
     assertEmail(email);
     assertPassword(password);
@@ -51,9 +67,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiBearerAuth()
-  @ApiResponse({ status: 200, description: 'User info retrieved successfully' })
-  async getMe(@Req() req: { user: { userId: string; email: string; credits: number } }) {
-    const { userId, email, credits } = req.user;
-    return { userId, email, credits };
+  @ApiResponse({ status: 200, description: 'Infos utilisateur (crédits lus dans le ledger)' })
+  async getMe(@Req() req: { user: { userId: string; email: string } }) {
+    const credits = await this.authService.getBalance(req.user.userId);
+    return {
+      userId: req.user.userId,
+      email: req.user.email,
+      credits,
+    };
   }
 }
