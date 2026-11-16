@@ -1,5 +1,7 @@
 # GENERATION_SPEC.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Statut de ce document
 
 Spécification d'exécution du pipeline de génération. Destiné à être implémenté tel quel — les noms de champs, types, et transitions d'état ci-dessous sont les noms à utiliser dans le code (migrations Prisma, DTOs NestJS), pas des exemples illustratifs.
@@ -114,7 +116,7 @@ CreditTransaction {
   userId: uuid (FK → User)
   amount: integer (positif pour GRANT_FREE/PURCHASE, négatif pour CONSUMPTION)
   type: enum(GRANT_FREE, PURCHASE, CONSUMPTION)
-  reference: string (nullable — generationId si CONSUMPTION, stripeSessionId si PURCHASE)
+  reference: string (nullable — generationId si CONSUMPTION, identifiant de transaction du fournisseur de paiement si PURCHASE)
   createdAt: timestamp
 }
 ```

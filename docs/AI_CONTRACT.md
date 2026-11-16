@@ -1,5 +1,7 @@
 # AI Contract — Slideify MVP
 
+> **Mise à jour M006.1** : les règles de validation (troncature, échecs de structure, `source_language`, `order`) et de retries de ce document sont précisées par `docs/M006_DECISIONS_AND_LAUNCH.md` §4.2 et §4.3. En cas de conflit, M006 prévaut. Le contrat technique (interfaces) reste celui de ce document.
+
 ## Interface Target
 
 ### LLMProvider Interface

@@ -1,18 +1,23 @@
 # ACCEPTANCE.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Rôle de ce document
 
 Critères d'acceptation par feature P0, format Given/When/Then. Une feature n'est **livrable** que si tous ses critères sont vérifiés, y compris les cas d'erreur — un happy path qui marche seul ne suffit pas.
 
 ---
 
-## Feature : Authentification (magic link)
+## Feature : Authentification (email + mot de passe — remplace le magic link, M006.1)
 
-- **Given** un utilisateur non connecté sur l'écran Auth, **When** il saisit un email valide et clique "Envoyer le lien", **Then** un email contenant un lien à usage unique est envoyé et un message de confirmation s'affiche
-- **Given** un email invalide saisi, **When** l'utilisateur clique "Envoyer", **Then** l'envoi est bloqué côté front avec un message d'erreur inline, aucune requête n'est faite au backend
-- **Given** un lien magic link valide cliqué, **When** la redirection s'effectue, **Then** l'utilisateur est connecté et redirigé vers le Dashboard, une session est créée
-- **Given** un lien magic link expiré (>1h) cliqué, **When** la redirection s'effectue, **Then** une page dédiée explique l'expiration avec un CTA pour redemander un lien
-- **Given** un lien déjà utilisé cliqué une seconde fois, **When** la redirection s'effectue, **Then** l'accès est refusé avec le même message que "lien expiré" (pas de distinction technique exposée à l'utilisateur)
+- **Given** un visiteur sur l'écran Auth en mode inscription, **When** il saisit un email valide et un mot de passe de 8 à 72 octets, **Then** le compte est créé, **3 crédits gratuits sont écrits dans la même transaction** (`MANUAL_GRANT`, référence `signup_bonus`), il est connecté automatiquement et arrive sur le Dashboard
+- **Given** un email déjà utilisé (y compris avec une casse ou des espaces différents), **When** l'inscription est soumise, **Then** la réponse est `409 EMAIL_TAKEN`, aucun compte ni crédit n'est créé
+- **Given** deux inscriptions simultanées avec le même email, **When** elles sont traitées, **Then** une seule réussit (201) et l'autre répond 409, **jamais 500**, et le compte ne reçoit que 3 crédits
+- **Given** un email invalide ou un mot de passe hors bornes, **When** le formulaire est soumis, **Then** l'envoi est bloqué côté client ; côté serveur, la réponse est `400 INVALID_INPUT`
+- **Given** des identifiants corrects, **When** l'utilisateur se connecte, **Then** il reçoit un JWT ; **Given** un mot de passe faux ou un email inconnu, **Then** la réponse est `401 INVALID_CREDENTIALS`, identique dans les deux cas, avec un temps de réponse indiscernable (test de temps)
+- **Given** n'importe quelle route de l'API, **When** elle est appelée avec uniquement un email, **Then** aucun JWT n'est jamais délivré (test de non-régression de la faille M004.2)
+- **Given** un jeton absent, invalide ou expiré, **When** une route protégée est appelée, **Then** la réponse est **401** `UNAUTHENTICATED` (et non 403)
+- **Given** un utilisateur connecté, **When** il appelle `/auth/me`, **Then** le solde renvoyé est celui du **ledger**, pas une valeur figée dans le jeton
 
 ## Feature : Saisie et lancement d'une génération
 
@@ -48,9 +53,9 @@ Critères d'acceptation par feature P0, format Given/When/Then. Une feature n'es
 ## Feature : Crédits et paiement
 
 - **Given** un nouvel utilisateur, **When** son compte est créé, **Then** 3 crédits gratuits sont attribués automatiquement, sans action manuelle
-- **Given** un utilisateur à 0 crédit sur l'écran Achat, **When** il clique "Acheter", **Then** une session Stripe Checkout est créée et l'utilisateur y est redirigé
-- **Given** un paiement Stripe confirmé (webhook `checkout.session.completed` reçu), **When** le webhook est traité, **Then** les crédits du pack sont ajoutés au compte de l'utilisateur, de façon idempotente (un même événement webhook reçu deux fois ne crédite qu'une fois)
-- **Given** un utilisateur annulant son paiement sur Stripe, **When** il revient sur Slideify, **Then** il est renvoyé à l'écran Achat sans message d'erreur (annulation ≠ échec)
+- **Given** un utilisateur à 0 crédit sur l'écran Achat, **When** il clique "Acheter", **Then** une commande est enregistrée et une session de paiement hébergée par le fournisseur est créée et l'utilisateur y est redirigé
+- **Given** un paiement confirmé et **vérifié côté serveur auprès du fournisseur**, **When** le webhook est traité, **Then** les crédits du pack sont ajoutés au compte de l'utilisateur, de façon idempotente (un même événement webhook reçu deux fois ne crédite qu'une fois)
+- **Given** un utilisateur annulant son paiement chez le fournisseur, **When** il revient sur Slideify, **Then** il est renvoyé à l'écran Achat sans message d'erreur (annulation ≠ échec)
 - **Given** un webhook reçu avec un délai après le retour utilisateur, **When** l'utilisateur est déjà revenu sur Slideify, **Then** le compteur de crédits se met à jour automatiquement dès réception du webhook (rafraîchissement court, sans action manuelle de l'utilisateur)
 
 ---

@@ -1,5 +1,7 @@
 # BACKLOG.md
 
+> **Mise à jour M006** : certaines règles de ce document sont remplacées par `docs/M006_DECISIONS_AND_LAUNCH.md` (décisions D-01 à D-21, paiement via une interface `PaymentProvider` au lieu de Stripe, format 1080×1350, authentification email + mot de passe). En cas de conflit, M004, M005 et M006 prévalent.
+
 ## Rôle de ce document
 
 Backlog **au niveau feature/produit**, priorisé. Différent de `docs/TASKS.md`, qui suit les tâches d'implémentation technique — chaque item P0 ci-dessous se décompose en une ou plusieurs `TASK-xxx`. Ce document est la source de vérité du **quoi** et du **pourquoi prioriser**, `TASKS.md` reste la source de vérité du **statut d'avancement technique**.
@@ -12,7 +14,7 @@ Toute feature ajoutée ici hors P0 doit rester hors périmètre tant que le P0 n
 
 | # | Feature | Réf. specs | Tâches TASKS.md associées |
 |---|---|---|---|
-| P0-1 | Authentification par magic link (Supabase Auth) | PRODUCT.md §Ce que le MVP fait, UX.md Écran 1, ACCEPTANCE.md §Authentification | TASK-006 |
+| P0-1 | Authentification email + mot de passe (JWT, bcrypt) — implémentée en M004.3, à stabiliser en M007 | PRODUCT.md §Ce que le MVP fait, UX.md Écran 1, ACCEPTANCE.md §Authentification | TASK-006 |
 | P0-2 | Modèles de données (User, Generation, Credit, Output) | ARCHITECTURE.md, DECISIONS.md ADR-004 | TASK-007 |
 | P0-3 | Écran Nouvelle génération : saisie texte + validation bornes | UX.md Écran 3, ACCEPTANCE.md §Saisie et lancement | TASK-012 (dashboard/UI) |
 | P0-4 | Queue de génération (BullMQ + Redis) | ARCHITECTURE.md, DECISIONS.md ADR-005 | TASK-008 |
@@ -26,10 +28,10 @@ Toute feature ajoutée ici hors P0 doit rester hors périmètre tant que le P0 n
 | P0-12 | Écran Résultat : preview carrousel + téléchargement ZIP + PDF | UX.md Écran 5, ACCEPTANCE.md §Résultat | TASK-012, TASK-013 |
 | P0-13 | Dashboard : historique des générations, états (en cours / échec / terminé), état vide | UX.md Écran 2, ACCEPTANCE.md §Historique | TASK-012 |
 | P0-14 | Système de crédits : attribution de 3 crédits gratuits à l'inscription, décompte uniquement au succès complet | PRODUCT.md §Monétisation, ACCEPTANCE.md §Crédits | TASK-006, TASK-007 |
-| P0-15 | Intégration Stripe Checkout (paiement unique, pas d'abonnement) + webhook idempotent | PRODUCT.md §Monétisation, ACCEPTANCE.md §Crédits | TASK-014 |
-| P0-16 | Écran Achat de crédits : offre unique, redirection Stripe, retour et confirmation | UX.md Écran 6, ACCEPTANCE.md §Crédits | TASK-012, TASK-014 |
+| P0-15 | Interface `PaymentProvider` (mock + fournisseur retenu, ADR-010), paiement unique, vérification serveur et crédit idempotent | PRODUCT.md §Monétisation, ACCEPTANCE.md §Crédits | TASK-014 |
+| P0-16 | Écran Achat de crédits : offre unique, redirection vers le checkout du fournisseur, retour et confirmation | UX.md Écran 6, ACCEPTANCE.md §Crédits | TASK-012, TASK-014 |
 
-**Note de dépendance** : Stripe n'apparaît pas dans la stack technique d'origine du README — son ajout est **requis** par PRODUCT.md (monétisation dès V1) et doit être reflété dans `DECISIONS.md` (nouvel ADR) et `.env.example` (déjà présent en placeholder générique `PAYMENT_PROVIDER`) au moment de l'implémentation de P0-15.
+**Note de dépendance** : Stripe n'est probablement pas disponible pour une entité au Cameroun (à confirmer, `M006` §5). Le paiement passe par une interface `PaymentProvider` (ADR-010) ; le choix du fournisseur et le prix sont des décisions de l'owner (O-1, O-2).
 
 ---
 
