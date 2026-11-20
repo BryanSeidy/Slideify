@@ -1,5 +1,6 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import type { LLMProvider } from '@slideify/llm';
+import { InvalidJSONResponseError } from '@slideify/llm';
 import {
   CreditTransactionType,
   GenerationStatus,
@@ -19,9 +20,43 @@ import {
 
 const logger = new Logger('worker');
 
-const MARKER_TIMEOUT = '__MOCK_TIMEOUT__';
-const MARKER_INVALID_JSON = '__MOCK_INVALID_JSON__';
-const MARKER_SCHEMA_INVALID = '__MOCK_SCHEMA_INVALID__';
+const COMPLETION_STATUSES: GenerationStatus[] = [
+  GenerationStatus.PROCESSING_LLM,
+  GenerationStatus.PROCESSING_RENDER,
+];
+
+class GenerationAlreadyCompletedError extends Error {
+  constructor() {
+    super('generation already completed');
+    this.name = 'GenerationAlreadyCompletedError';
+  }
+}
+
+class InsufficientCreditsError extends Error {
+  constructor() {
+    super('NO_CREDITS');
+    this.name = 'InsufficientCreditsError';
+  }
+}
+
+function isPrismaCode(error: unknown, code: string): boolean {
+  return (
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === code) ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: string }).code === code)
+  );
+}
+
+function isCompletionUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  if (!isPrismaCode(error, 'P2002')) return false;
+  const err = error as Error & { meta?: { target?: unknown } };
+  const target = JSON.stringify(err.meta?.target ?? '');
+  // Toute unicité touchée par la transaction de complétion signifie qu'une
+  // autre exécution a déjà persisté le même résultat.
+  return /CreditTransaction|generation:|Slide|GenerationEvent/.test(target + (err.message ?? ''));
+}
 
 function truncateAtWord(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -48,14 +83,11 @@ export interface ProcessJobInput {
 export type ProcessOutcome = 'completed' | 'failed' | 'skipped';
 
 /**
- * Production generation processor (M004). Pure apart from injected deps —
- * executed directly by unit tests with a fake db + stub LLM.
- *
- * Contract:
- * - returns 'skipped' for poison/missing/terminal/busy deliveries (never throws);
- * - returns 'failed' after writing FAILED for semantic errors or exhausted retries;
- * - THROWS transient errors while retries remain (BullMQ redelivers; the
- *   generation was reset to QUEUED first so the retry really re-executes).
+ * Production generation processor (M004/M007).
+ * - 'skipped' : poison/missing/terminal/busy delivery (never throws).
+ * - 'failed'  : semantic error or exhausted retries, FAILED persisted.
+ * - throws    : transient error while retries remain (BullMQ redelivers after
+ *               the generation has been reset to QUEUED).
  */
 export async function processGeneration(
   db: PrismaClient,
@@ -72,7 +104,12 @@ export async function processGeneration(
     return 'skipped';
   }
 
-  const acquired = await acquireForProcessing(db as never, generationId, STALE_PROCESSING_MS, attemptStartedAt);
+  const acquired = await acquireForProcessing(
+    db as never,
+    generationId,
+    STALE_PROCESSING_MS,
+    attemptStartedAt,
+  );
   if (acquired !== 'claimed') {
     logger.info(`Generation ${generationId} not claimed (${acquired}), skipping (idempotent)`);
     return 'skipped';
@@ -86,13 +123,6 @@ export async function processGeneration(
     }
   };
 
-  /**
-   * Settles a transient failure for this attempt.
-   * - Attempts remain: resets the claim to QUEUED and THROWS so BullMQ redelivers
-   *   (the retry then really re-executes via a fresh atomic claim).
-   * - Attempts exhausted: writes FAILED with the given terminal code, returns 'terminal'.
-   * - Claim already settled concurrently: returns 'settled' (caller maps to 'skipped').
-   */
   const settleOrRetryTransient = async (
     error: unknown,
     terminalCode: string,
@@ -101,7 +131,6 @@ export async function processGeneration(
     if (shouldRetry(attemptsMade, maxAttempts)) {
       const reset = await resetForRetry(db as never, generationId);
       if (!reset) {
-        // Lost the race (completed/failed concurrently) — do not retry.
         logger.info(`Generation ${generationId} settled concurrently, skipping retry`);
         return 'settled';
       }
@@ -119,7 +148,6 @@ export async function processGeneration(
   try {
     generation = await db.generation.findUnique({ where: { id: generationId } });
   } catch (error) {
-    // Read failure before any work: transient infrastructure error.
     const outcome = await settleOrRetryTransient(error, 'LLM_ERROR');
     return outcome === 'settled' ? 'skipped' : 'failed';
   }
@@ -132,36 +160,30 @@ export async function processGeneration(
   // --- Étape LLM ---
   let llmRaw: unknown;
   try {
-    if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_TIMEOUT)) {
-      throw new Error('Simulated timeout');
-    }
     llmRaw = await llm.generate(sourceText);
     checkBudget();
-
-    if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_INVALID_JSON)) {
-      throw new Error('Invalid JSON simulated');
-    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message === 'Invalid JSON simulated') {
+    const invalidJson =
+      error instanceof InvalidJSONResponseError ||
+      message.includes('Invalid JSON simulated');
+
+    if (invalidJson) {
+      // D-14 : exactement un retry de génération, à l'intérieur du job.
       logger.info(`Invalid JSON for ${generationId}, single silent retry`);
       try {
-        llmRaw = await llm.generate(sourceText.replace(MARKER_INVALID_JSON, ''));
+        llmRaw = await llm.generate(sourceText);
         checkBudget();
       } catch (retryError) {
-        const retryMessage = retryError instanceof Error ? retryError.message : String(retryError);
-        logger.error(`LLM retry failed for ${generationId}: ${retryMessage}`);
+        logger.error(`LLM JSON retry failed for ${generationId}`);
         await db.generation.update({
           where: { id: generationId },
-          data: { status: GenerationStatus.FAILED, error: 'MALFORMED_OUTPUT' },
+          data: { status: GenerationStatus.FAILED, error: 'INVALID_RESPONSE' },
         });
         return 'failed';
       }
-    } else if (message === 'TIMEOUT' || message.includes('Simulated timeout') || isTransientError(error)) {
-      const outcome = await settleOrRetryTransient(
-        error,
-        message.includes('TIMEOUT') || message.includes('Simulated timeout') ? 'TIMEOUT' : 'LLM_ERROR',
-      );
+    } else if (message === 'TIMEOUT' || isTransientError(error)) {
+      const outcome = await settleOrRetryTransient(error, 'TIMEOUT');
       return outcome === 'settled' ? 'skipped' : 'failed';
     } else {
       logger.error(`LLM error for ${generationId}: ${message}`);
@@ -173,38 +195,23 @@ export async function processGeneration(
     }
   }
 
-  // --- Validation Zod stricte (jamais de persistance directe) ---
+  // --- Couche 1 : structure (échec terminal, aucun retry, aucun débit) ---
   let validated: LLMResponse;
-  try {
-    const parsed = LLMResponseSchema.safeParse(llmRaw);
-    if (!parsed.success) {
-      throw new Error('schema invalid: ' + parsed.error.issues.map((i) => i.path.join('.')).join(','));
-    }
-    validated = parsed.data;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error(`LLM validation failed for ${generationId}: ${message}`);
-    const code =
-      process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_SCHEMA_INVALID)
-        ? 'MALFORMED_OUTPUT'
-        : 'INVALID_RESPONSE';
+  const parsed = LLMResponseSchema.safeParse(llmRaw);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => i.path.join('.')).join(',');
+    logger.error(`LLM validation failed for ${generationId}: ${issues}`);
     await db.generation.update({
       where: { id: generationId },
-      data: { status: GenerationStatus.FAILED, error: code },
+      data: { status: GenerationStatus.FAILED, error: 'MALFORMED_OUTPUT' },
     });
     return 'failed';
   }
+  validated = parsed.data;
 
-  if (validated.slides.length < 5 || validated.slides.length > 10) {
-    logger.error(`Invalid slide count ${validated.slides.length} for ${generationId}`);
-    await db.generation.update({
-      where: { id: generationId },
-      data: { status: GenerationStatus.FAILED, error: 'INVALID_RESPONSE' },
-    });
-    return 'failed';
-  }
-
+  // --- Couche 2 : longueurs (troncature, pas d'échec) ---
   const slides = validated.slides.map((s, i) => ({
+    // D-17 : la position dans le tableau fait foi, renumérotation 1..N.
     order: i + 1,
     title: truncateAtWord(s.title.trim(), 60),
     body: truncateAtWord(s.body.trim(), 220),
@@ -213,7 +220,7 @@ export async function processGeneration(
   if (slides.some((s) => !s.title || !s.body)) {
     await db.generation.update({
       where: { id: generationId },
-      data: { status: GenerationStatus.FAILED, error: 'INVALID_RESPONSE' },
+      data: { status: GenerationStatus.FAILED, error: 'MALFORMED_OUTPUT' },
     });
     return 'failed';
   }
@@ -225,28 +232,40 @@ export async function processGeneration(
     return outcome === 'settled' ? 'skipped' : 'failed';
   }
 
-  // --- Transaction atomique : slides + COMPLETED + débit + activation ---
+  // --- Transaction de complétition unique : slides + COMPLETED + débit + event ---
   try {
     await db.$transaction(async (tx) => {
+      // Passage conditionnel : une seconde complétion échoue et annule
+      // toute la transaction (pas de second débit, pas de second event).
+      const claimed = await tx.generation.updateMany({
+        where: { id: generationId, status: { in: COMPLETION_STATUSES } },
+        data: { status: GenerationStatus.COMPLETED, completedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new GenerationAlreadyCompletedError();
+      }
+
+      // Invariant 4 : filet de sécurité, le solde est relu dans le verrou.
+      await tx.$queryRawUnsafe(
+        'SELECT "id" FROM "User" WHERE "id" = $1 FOR UPDATE',
+        generation.userId,
+      );
+      const balance = await tx.creditTransaction.aggregate({
+        _sum: { amount: true },
+        where: { userId: generation.userId },
+      });
+      if ((balance._sum.amount ?? 0) < 1) {
+        throw new InsufficientCreditsError();
+      }
+
       await tx.slide.deleteMany({ where: { generationId } });
       await tx.slide.createMany({
-        data: slides.map((s) => ({
-          generationId,
-          order: s.order,
-          title: s.title,
-          body: s.body,
-        })),
+        data: slides.map((s) => ({ generationId, ...s })),
       });
-
       await tx.generation.update({
         where: { id: generationId },
-        data: {
-          status: GenerationStatus.COMPLETED,
-          slideCount: slides.length,
-          completedAt: new Date(),
-        },
+        data: { slideCount: slides.length },
       });
-
       await tx.creditTransaction.create({
         data: {
           userId: generation.userId,
@@ -255,38 +274,39 @@ export async function processGeneration(
           reference: `generation:${generationId}`,
         },
       });
-
-      const completedCount = await tx.generation.count({
-        where: { userId: generation.userId, status: GenerationStatus.COMPLETED },
+      await tx.generationEvent.create({
+        data: {
+          name: GenerationEventName.USER_ACTIVATED,
+          actorId: generation.userId,
+          metadata: { generationId },
+        },
       });
-      if (completedCount === 1) {
-        await tx.generationEvent.create({
-          data: {
-            name: GenerationEventName.FIRST_GENERATION_COMPLETED,
-            actorId: generation.userId,
-            metadata: { generationId },
-          },
-        });
-      }
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes('Unique constraint') || message.includes('UniqueConstraint')) {
-      logger.info(`Generation ${generationId} already completed by concurrent worker (idempotent)`);
+    if (error instanceof GenerationAlreadyCompletedError || isCompletionUniqueViolation(error)) {
+      // La transaction a pu être annulée APRÈS le passage en COMPLETED (unicité
+      // du ledger). On repasse la ligne en terminal hors transaction pour ne
+      // jamais laisser un doublon de complétion bloquer le réconciliateur.
+      await db.generation.updateMany({
+        where: { id: generationId, status: { in: COMPLETION_STATUSES } },
+        data: { status: GenerationStatus.COMPLETED, completedAt: new Date() },
+      });
+      logger.info(`Generation ${generationId} already completed (idempotent replay)`);
       return 'completed';
     }
+    if (error instanceof InsufficientCreditsError) {
+      await db.generation.update({
+        where: { id: generationId },
+        data: { status: GenerationStatus.FAILED, error: 'NO_CREDITS' },
+      });
+      return 'failed';
+    }
+    const message = error instanceof Error ? error.message : String(error);
     logger.error(`Completion transaction failed for ${generationId}: ${message}`);
     const outcome = await settleOrRetryTransient(error, 'TRANSACTION_ERROR');
     return outcome === 'settled' ? 'skipped' : 'failed';
   }
 
-  try {
-    checkBudget();
-  } catch (error) {
-    // Work is fully persisted; a budget overrun here must not fail the generation.
-    logger.info(`Generation ${generationId} completed (budget check after commit skipped)`);
-    return 'completed';
-  }
   logger.info(`Generation ${generationId} completed successfully`);
   return 'completed';
 }

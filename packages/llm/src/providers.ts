@@ -6,6 +6,18 @@ const MARKER_TIMEOUT = '__MOCK_TIMEOUT__';
 const MARKER_INVALID_JSON = '__MOCK_INVALID_JSON__';
 const MARKER_SCHEMA_INVALID = '__MOCK_SCHEMA_INVALID__';
 
+/**
+ * Erreur dédiée à une réponse non parsable. Le worker fait exactement un
+ * retry silencieux pour cette classe, sans jamais la confondre avec une
+ * erreur technique transitoire (BullMQ). Le vrai retry JSON arrive en M008-IA.
+ */
+export class InvalidJSONResponseError extends Error {
+  constructor(message = 'Invalid JSON response') {
+    super(message);
+    this.name = 'InvalidJSONResponseError';
+  }
+}
+
 export class MockProvider implements LLMProvider {
   async generate(sourceText: string): Promise<LLMResponse> {
     // Simuler un timeout si le marqueur est présent
@@ -56,7 +68,7 @@ export class MockProvider implements LLMProvider {
     // Injecter du JSON invalide simulé si le marqueur est présent
     if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_INVALID_JSON)) {
       // Ne pas retourner le résultat réel ; lever une erreur comme si le JSON était invalide
-      throw new Error('Invalid JSON simulated');
+      throw new InvalidJSONResponseError('Invalid JSON simulated');
     }
 
     // Injecter une réponse qui échouera la validation du schéma si le marqueur est présent

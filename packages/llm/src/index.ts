@@ -14,4 +14,4 @@ export interface LLMConfig {
 }
 
 export { createLLMProvider } from './factory';
-export { MockProvider } from './providers';
+export { MockProvider, InvalidJSONResponseError } from './providers';

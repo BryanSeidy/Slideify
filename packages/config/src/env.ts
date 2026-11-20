@@ -11,6 +11,9 @@ const envSchema = z.object({
   REDIS_PORT: z.string().default('6379'),
   REDIS_PASSWORD: z.string().optional(),
 
+  // M006 D-09 : le mode IA est explicite. Le MVP n'a que le mock.
+  AI_PROVIDER: z.enum(['mock', 'openrouter']).default('mock'),
+
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('openai/gpt-4o-mini'),
   OPENROUTER_SITE_URL: z.string().optional(),

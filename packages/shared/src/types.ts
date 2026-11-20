@@ -6,31 +6,43 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-// ---- Slide schema (PROMPTS.md contract) ----
-// trim() avant min(1) : un titre/espace blanc seul est invalide (AO-10).
+/**
+ * D-04 — Validation en deux couches.
+ *
+ * `LLMSlideSchema` valide la STRUCTURE et des plafonds de sécurité larges :
+ * un titre de 61 caractères ou un corps de 235 caractères est valide ici,
+ * puis tronqué par le worker avant persistance. `SlideSchema` reste le
+ * contrat de persistance (≤ 60 / ≤ 220), utilisé après troncature.
+ */
+export const LLMSlideSchema = z.object({
+  order: z.number().int(),
+  title: z.string().trim().min(1).max(300),
+  body: z.string().trim().min(1).max(1100),
+});
+// Les champs inconnus sont retirés (pas de `passthrough`) : jamais persistés.
+
+export const LLMResponseSchema = z.object({
+  slides: z.array(LLMSlideSchema).min(5).max(10),
+  meta: z.object({
+    slide_count: z.number().int(),
+    // D-05 : la VALEUR ne bloque jamais (ni "fr-FR", ni "French", ni "").
+    // Seul un type non-chaîne est une erreur de structure.
+    source_language: z.string(),
+  }),
+});
+
+/** Contrat de persistance (après troncature par le worker). */
 export const SlideSchema = z.object({
   order: z.number().int().min(1).max(10),
   title: z.string().trim().min(1).max(60),
   body: z.string().trim().min(1).max(220),
 });
 
-// ---- LLM response schema ----
-export const LLMResponseSchema = z.object({
-  slides: z.array(SlideSchema).min(5).max(10),
-  meta: z.object({
-    slide_count: z.number().int(),
-    source_language: z.string().min(2).max(2),
-  }),
-});
-
-// ---- Validation types ----
 export type Slide = z.infer<typeof SlideSchema>;
 export type LLMResponse = z.infer<typeof LLMResponseSchema>;
 
 // ---- Generation input ----
 // Bornes métier en MOTS (80–3000), pas en caractères.
-// z.string().min/max compte des caractères : inutilisable ici.
-// On valide via countWords(), fonction unique partagée front/back (§13).
 export const GenerationInputSchema = z.object({
   sourceText: z.string().superRefine((val, ctx) => {
     const words = countWords(val);
@@ -52,11 +64,11 @@ export const GenerationInputSchema = z.object({
 export type GenerationInput = z.infer<typeof GenerationInputSchema>;
 
 // ---- Generation job payload ----
-// Contrat réel M004 : seul generationId transite par BullMQ.
-// Le worker relit sourceText/userId depuis PostgreSQL (SC-07, AZ-06).
+// Contrat M004/M006 : seul generationId transite par BullMQ. `.strict()`
+// garantit qu'un payload contenant sourceText/userId est rejeté.
 export const GenerationJobSchema = z.object({
-  generationId: z.string(),
-});
+  generationId: z.string().min(1),
+}).strict();
 
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 
