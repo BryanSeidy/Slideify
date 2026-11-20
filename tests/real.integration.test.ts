@@ -70,6 +70,22 @@ async function call(
   return { status: response.status, body };
 }
 
+/** Vérifie qu'une requête brute a bien été rejetée par PostgreSQL (SQLSTATE). */
+async function expectRawSqlFailure(
+  query: Promise<unknown>,
+  sqlState: string,
+): Promise<void> {
+  let caught: unknown;
+  try {
+    await query;
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeDefined();
+  expect((caught as { code?: string }).code).toBe('P2010');
+  expect(JSON.stringify(caught)).toContain(`"code":"${sqlState}"`);
+}
+
 async function cleanDatabase(): Promise<void> {
   // Ordre conforme aux clés étrangères (tout est en cascade, mais explicite).
   await prisma.generationEvent.deleteMany();
@@ -517,12 +533,15 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       `INSERT INTO "CreditTransaction" ("id","userId","amount","type","reference","createdAt")
        VALUES ('dup_1','${user.userId}',-1,'GENERATION_DEBIT','generation:dup',NOW())`,
     );
-    await expect(
+    // Prisma n'inclut pas le nom de la contrainte dans le message d'une
+    // violation 23505 : on vérifie le SQLSTATE natif renvoyé par PostgreSQL.
+    await expectRawSqlFailure(
       prisma.$executeRawUnsafe(
         `INSERT INTO "CreditTransaction" ("id","userId","amount","type","reference","createdAt")
          VALUES ('dup_2','${user.userId}',-1,'GENERATION_DEBIT','generation:dup',NOW())`,
       ),
-    ).rejects.toThrow(/CreditTransaction_userId_type_reference_key/);
+      '23505',
+    );
 
     const insertActive = (id: string) =>
       prisma.$executeRawUnsafe(
@@ -530,8 +549,6 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
          VALUES ('${id}','${user.userId}','texte','QUEUED',NOW(),NOW())`,
       );
     await insertActive('active_1');
-    await expect(insertActive('active_2')).rejects.toThrow(
-      /Generation_userId_active_unique/,
-    );
+    await expectRawSqlFailure(insertActive('active_2'), '23505');
   });
 });
