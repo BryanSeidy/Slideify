@@ -1,5 +1,10 @@
 import type { PrismaClient } from '@prisma/client';
 
+// Env avant tout import de @slideify/llm (le factory lit la config au chargement).
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/slideify_test';
+process.env.AUTH_SECRET = process.env.AUTH_SECRET || 'unit-test-secret-0123456789abcdef';
+process.env.AI_PROVIDER = 'mock';
+
 // Production units under test (real code paths, fake infrastructure).
 // NOTE: jest sets NODE_ENV=test when unset; mock markers stay active here.
 
@@ -37,14 +42,35 @@ function makeFakeDb() {
   const events: Array<{ name: string; actorId: string; metadata: unknown }> = [];
 
   const generation = {
-    updateMany: async ({ where, data }: { where: { id: string; status?: string }; data: Partial<GenRow> }) => {
+    updateMany: async ({
+      where,
+      data,
+    }: {
+      where: { id: string; status?: string | { in: string[] } };
+      data: Partial<GenRow>;
+    }) => {
       const g = generations.get(where.id);
       if (!g) return { count: 0 };
-      if (where.status !== undefined && g.status !== where.status) return { count: 0 };
+      if (typeof where.status === 'string' && g.status !== where.status) return { count: 0 };
+      if (
+        where.status &&
+        typeof where.status === 'object' &&
+        !where.status.in.includes(g.status)
+      ) {
+        return { count: 0 };
+      }
       Object.assign(g, data);
       return { count: 1 };
     },
     findUnique: async ({ where }: { where: { id: string } }) => generations.get(where.id) ?? null,
+    findFirst: async ({ where }: { where: { id?: string; userId?: string; status?: unknown } }) => {
+      for (const g of generations.values()) {
+        if (where.id && g.id !== where.id) continue;
+        if (where.userId && g.userId !== where.userId) continue;
+        return g;
+      }
+      return null;
+    },
     update: async ({ where, data }: { where: { id: string }; data: Partial<GenRow> }) => {
       const g = generations.get(where.id);
       if (!g) throw new Error('Record not found');
@@ -84,7 +110,12 @@ function makeFakeDb() {
     create: async (args: { data: { userId: string; amount: number; type: string; reference: string } }) => {
       const d = args.data;
       if (debits.some((x) => x.userId === d.userId && x.type === d.type && x.reference === d.reference)) {
-        throw new Error('Unique constraint failed on CreditTransaction(userId, type, reference)');
+        const err = new Error(
+          'Unique constraint failed on the fields: (`userId`,`type`,`reference`)',
+        ) as Error & { code?: string; meta?: { target?: string[] } };
+        err.code = 'P2002';
+        err.meta = { target: ['CreditTransaction_userId_type_reference_key'] };
+        throw err;
       }
       debits.push(d);
       return d;
@@ -101,8 +132,18 @@ function makeFakeDb() {
   const db = {
     generation,
     slide,
-    creditTransaction,
+    creditTransaction: {
+      ...creditTransaction,
+      aggregate: async ({ where }: { where: { userId: string } }) => ({
+        _sum: {
+          amount: debits
+            .filter((d) => d.userId === where.userId)
+            .reduce((sum, d) => sum + d.amount, 3), // 3 crédits de bienvenue
+        },
+      }),
+    },
     generationEvent,
+    $queryRawUnsafe: async () => [],
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => {
       // Snapshot for rollback semantics (mirrors real transaction atomicity).
       const snapGen = new Map(generations);
@@ -110,7 +151,13 @@ function makeFakeDb() {
       const snapDebits = [...debits];
       const snapEvents = [...events];
       try {
-        return await fn({ generation, slide, creditTransaction, generationEvent });
+        return await fn({
+          generation,
+          slide,
+          creditTransaction: db.creditTransaction,
+          generationEvent,
+          $queryRawUnsafe: db.$queryRawUnsafe,
+        });
       } catch (e) {
         generations.clear();
         for (const [k, v] of snapGen) generations.set(k, v);
@@ -178,7 +225,7 @@ describe('P0#2 — first treatment executes and completes', () => {
     expect(ctx.generations.get(id)?.status).toBe('COMPLETED');
     expect(ctx.slides.get(id)?.map((s) => s.order)).toEqual([1, 2, 3, 4, 5]);
     expect(ctx.debits.filter((d) => d.reference === `generation:${id}`)).toHaveLength(1);
-    expect(ctx.events.filter((e) => e.name === 'first_generation_completed')).toHaveLength(1);
+    expect(ctx.events.filter((e) => e.name === 'user_activated')).toHaveLength(1);
   });
 });
 
@@ -207,7 +254,7 @@ describe('P0#2 — transient error triggers a REAL retry that re-executes', () =
     expect(llm.calls).toBe(2); // second treatment REALLY executed
     expect(ctx.slides.get(id)).toHaveLength(5); // no duplicates
     expect(ctx.debits.filter((d) => d.reference === `generation:${id}`)).toHaveLength(1);
-    expect(ctx.events.filter((e) => e.name === 'first_generation_completed')).toHaveLength(1);
+    expect(ctx.events.filter((e) => e.name === 'user_activated')).toHaveLength(1);
   });
 
   it('persistent transient -> FAILED after attempts exhausted, 0 debit, 0 slides', async () => {
@@ -235,7 +282,7 @@ describe('P0#2 — transient error triggers a REAL retry that re-executes', () =
 });
 
 describe('P0#2 — semantic errors never retry and never debit', () => {
-  it('schema-invalid output -> FAILED/INVALID_RESPONSE immediately, LLM called once', async () => {
+  it('schema-invalid output -> FAILED/MALFORMED_OUTPUT immediately, LLM called once', async () => {
     const ctx = makeFakeDb();
     const id = seedGeneration(ctx);
     const llm = stubLlm([{ invalidSchema: true }]);
@@ -249,7 +296,7 @@ describe('P0#2 — semantic errors never retry and never debit', () => {
     expect(outcome).toBe('failed');
     expect(llm.calls).toBe(1);
     expect(ctx.generations.get(id)?.status).toBe('FAILED');
-    expect(ctx.generations.get(id)?.error).toBe('INVALID_RESPONSE');
+    expect(ctx.generations.get(id)?.error).toBe('MALFORMED_OUTPUT');
     expect(ctx.debits).toHaveLength(0);
   });
 });
@@ -304,7 +351,7 @@ describe('P0#2 — duplicate delivery and terminal states are skipped', () => {
     expect(outcome).toBe('skipped');
     expect(llm.calls).toBe(1);
     expect(ctx.debits.filter((d) => d.reference === `generation:${id}`)).toHaveLength(1);
-    expect(ctx.events.filter((e) => e.name === 'first_generation_completed')).toHaveLength(1);
+    expect(ctx.events.filter((e) => e.name === 'user_activated')).toHaveLength(1);
   });
 
   it('missing generation -> skipped without retry', async () => {
@@ -346,9 +393,12 @@ describe('P0#2 — concurrency: two claimants, one owner', () => {
     expect(
       await processGeneration(ctx.db, llm as never, { generationId: id, attemptsMade: 0, maxAttempts: 3 }),
     ).toBe('completed');
-    // Extreme edge: row forced back to QUEUED after a committed completion
-    // (e.g. operator intervention) — the debit constraint must still hold.
-    ctx.generations.get(id)!.status = 'QUEUED';
+    // Accusé de réception perdu + réclamation d'une ligne obsolète : le second
+    // claim réussit (PROCESSING_* vieux de 1 h), le LLM tourne à nouveau, mais
+    // l'unicité du ledger (userId, type, reference) rejette le 2e débit.
+    // Le test "COMPLETED redelivery" ci-dessus couvre le chemin skip-terminal.
+    ctx.generations.get(id)!.status = 'PROCESSING_LLM';
+    ctx.generations.get(id)!.startedAt = new Date(Date.now() - 3600_000);
     expect(
       await processGeneration(ctx.db, llm as never, { generationId: id, attemptsMade: 0, maxAttempts: 3 }),
     ).toBe('completed');

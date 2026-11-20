@@ -9,11 +9,13 @@
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "jest --config jest.config.js --maxWorkers=2 --workerIdleMemoryLimit=512MB",
+    "test:integration": "jest --config jest.integration.config.js --runInBand",
     "db:generate": "pnpm --filter @slideify/schema db:generate",
     "db:push": "pnpm --filter @slideify/schema db:push",
     "worker": "pnpm --filter worker start"
   },
   "devDependencies": {
+    "@nestjs/bullmq": "^10.2.3",
     "@nestjs/common": "^10.4.22",
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/testing": "^10.4.22",
@@ -22,6 +24,7 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^20.19.43",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.81.5",
     "jest": "^29.7.0",
     "reflect-metadata": "^0.2.2",
     "ts-jest": "^29.4.14",

@@ -4,6 +4,8 @@ module.exports = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
+  // Les tests d'infrastructure réelle (PostgreSQL/Redis) ont leur propre config.
+  testPathIgnorePatterns: ['/node_modules/', 'real\\.integration\\.test\\.ts$'],
   moduleNameMapper: {
     '^@slideify/shared$': '<rootDir>/packages/shared/src',
     '^@slideify/config$': '<rootDir>/packages/config/src',

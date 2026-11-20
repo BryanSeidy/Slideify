@@ -58,9 +58,26 @@ function makeFakePrisma() {
     },
   };
 
+  const ACTIVE = ['QUEUED', 'PROCESSING_LLM', 'PROCESSING_RENDER'];
   const generation = {
     findUnique: async ({ where }: { where: { id: string } }) => generations.get(where.id) ?? null,
+    findFirst: async ({ where }: { where: { id?: string; userId?: string; status?: { in: string[] } } }) => {
+      for (const g of generations.values()) {
+        if (where.id && g.id !== where.id) continue;
+        if (where.userId && g.userId !== where.userId) continue;
+        if (where.status && !where.status.in.includes(g.status)) continue;
+        return g;
+      }
+      return null;
+    },
+    findMany: async () => [...generations.values()],
     create: async ({ data }: { data: { userId: string; sourceText: string; status: string } }) => {
+      // Miroir de l'index partiel PostgreSQL unique sur les statuts actifs.
+      if ([...generations.values()].some((g) => g.userId === data.userId && ACTIVE.includes(g.status))) {
+        const err = new Error('Unique constraint failed on Generation_userId_active_unique') as Error & { code: string };
+        err.code = 'P2002';
+        throw err;
+      }
       const g = {
         id: `gen_${seq++}`,
         userId: data.userId,
@@ -79,6 +96,16 @@ function makeFakePrisma() {
       if (!g) throw new Error('Record not found');
       Object.assign(g, data);
       return g;
+    },
+    updateMany: async ({ where, data }: { where: { id?: string; status?: string }; data: Partial<{ status: string; error: string }> }) => {
+      let count = 0;
+      for (const g of generations.values()) {
+        if (where.id && g.id !== where.id) continue;
+        if (where.status && g.status !== where.status) continue;
+        Object.assign(g, data);
+        count += 1;
+      }
+      return { count };
     },
     count: async ({ where }: { where: { userId: string; status: { in: string[] } } }) =>
       [...generations.values()].filter(

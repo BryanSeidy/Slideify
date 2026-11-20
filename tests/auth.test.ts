@@ -14,7 +14,7 @@ const { AuthModule } = require('../apps/api/src/auth/auth.module');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { AuthController } = require('../apps/api/src/auth/auth.controller');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { AuthService } = require('../apps/api/src/auth/auth.service');
+const { AuthService, DUMMY_HASH, BCRYPT_COST } = require('../apps/api/src/auth/auth.service');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { JwtAuthGuard } = require('../apps/api/src/auth/jwt.guard');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -214,7 +214,43 @@ describe('P0 M004.3 — protected routes use JWT identity only', () => {
           getRequest: () => ({ headers: { authorization } as unknown, user: undefined as unknown }),
         }),
       };
-      expect(guard.canActivate(ctx as unknown as never)).toBe(false);
+      // D-19 : une demande non authentifiée est une vraie 401, pas un 403
+      // produit par un guard qui renvoie `false`.
+      expect(() => guard.canActivate(ctx as unknown as never)).toThrow(
+        expect.objectContaining({ status: 401 }),
+      );
     }
+  });
+});
+
+describe('M007 — dummy hash valide et résistant à l\'énumération par le temps', () => {
+  it('is a real 60-character bcrypt hash at cost 12', async () => {
+    expect(DUMMY_HASH).toHaveLength(60);
+    expect(DUMMY_HASH).toMatch(/^\$2[aby]\$12\$/);
+    // Un hash invalide renvoie false immédiatement, un hash valide paie le coût.
+    await expect(bcrypt.compare('anything', DUMMY_HASH)).resolves.toBe(false);
+  });
+
+  it('unknown email and known email with wrong password have comparable bcrypt cost', async () => {
+    const service = new AuthService(makeFakePrisma(), new JwtService({ secret: TEST_SECRET }));
+    await service.register('timing@example.com', 'correct-password-1');
+
+    const measure = async (email: string) => {
+      const started = process.hrtime.bigint();
+      await service.login(email, 'definitely-wrong').catch(() => undefined);
+      return Number(process.hrtime.bigint() - started) / 1e6;
+    };
+
+    // Une mesure d'échauffement évite de pénaliser le premier appel (JIT).
+    await measure('warmup@example.com');
+    const unknown = await measure('nobody@example.com');
+    const known = await measure('timing@example.com');
+
+    // Les deux chemins font exactement un bcrypt.compare au coût BCRYPT_COST.
+    // Seuil volontairement large : CI partagée, mais un dummy invalide
+    // (quelques ms) serait détecté.
+    expect(BCRYPT_COST).toBe(12);
+    expect(unknown / known).toBeGreaterThan(0.25);
+    expect(known / unknown).toBeGreaterThan(0.25);
   });
 });
