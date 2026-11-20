@@ -6,11 +6,11 @@ export class HttpError extends HttpException {
     code: ErrorCode,
     message: string,
     statusCode: HttpStatus,
+    extra: Record<string, unknown> = {},
   ) {
-    super(
-      { statusCode, code, message },
-      statusCode,
-    );
+    // `extra` fait partie de la réponse : le filtre global ne peut relayer
+    // que les champs présents dans getResponse() (ex. activeGenerationId).
+    super({ statusCode, code, message, ...extra }, statusCode);
   }
 }
 
@@ -45,8 +45,9 @@ export class NoCreditsError extends HttpError {
 }
 
 export class GenerationInProgressError extends HttpError {
-  constructor(message: string) {
-    super(ErrorCode.GENERATION_IN_PROGRESS, message, HttpStatus.CONFLICT);
+  constructor(message = 'Une génération est déjà en cours.', activeGenerationId?: string) {
+    super(ErrorCode.GENERATION_IN_PROGRESS, message, HttpStatus.CONFLICT,
+      activeGenerationId ? { activeGenerationId } : {});
   }
 }
 

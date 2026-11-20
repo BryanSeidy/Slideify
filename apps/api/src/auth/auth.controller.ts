@@ -18,7 +18,17 @@ import {
 } from '../common/errors/http-error';
 
 function assertEmail(email: unknown): asserts email is string {
-  if (typeof email !== 'string' || !email.includes('@') || email.length > 320) {
+  if (typeof email !== 'string') {
+    throw new InvalidEmailError();
+  }
+  // D-21 : les espaces autour de l'adresse sont retirés avant unicité.
+  // Le corps peut donc contenir "  User@Example.com  ".
+  const normalized = email.trim().toLowerCase();
+  if (
+    normalized.length === 0 ||
+    normalized.length > 320 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+  ) {
     throw new InvalidEmailError();
   }
 }

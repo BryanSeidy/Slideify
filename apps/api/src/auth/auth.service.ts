@@ -1,8 +1,10 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { config } from '@slideify/config';
+import { EmailTakenError } from '../common/errors/http-error';
 
 /**
  * bcrypt cost factor : 12 pour les nouveaux mots de passe (M004.3 P1.6).
@@ -19,8 +21,8 @@ export const MAX_PASSWORD_BYTES = 72;
  * login d'un email connu — protection contre l'énumération par le temps.
  * Format : $2b$<cost>$<22 salt chars><31 hash chars> = 60 caractères.
  */
-const DUMMY_HASH =
-  '$2b$12$abcdefghijklmnopqrstuvABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+export const DUMMY_HASH =
+  '$2b$12$LnqDFXBEyrDmhL/oio8fhOj4i0Sbk027Cx9M4o5qPO3jmYLhqvnYa';
 
 export interface AuthResult {
   userId: string;
@@ -50,6 +52,13 @@ export function validateAuthSecret(secret: string): void {
  */
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') ||
+    (typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002')
+  );
 }
 
 @Injectable()
@@ -94,18 +103,25 @@ export class AuthService {
       where: { email: normalizedEmail },
     });
     if (existing) {
-      throw new ConflictException({
-        code: 'EMAIL_TAKEN',
-        message: 'Un compte existe déjà pour cet email.',
-      });
+      throw new EmailTakenError();
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
 
     return this.prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: { email: normalizedEmail, passwordHash },
-      });
+      let newUser: { id: string; email: string };
+      try {
+        newUser = await tx.user.create({
+          data: { email: normalizedEmail, passwordHash },
+        });
+      } catch (error) {
+        // Course au register : l'unicité de l'email est la garde finale.
+        // La transaction est annulée, donc aucun second crédit n'est écrit.
+        if (isUniqueViolation(error)) {
+          throw new EmailTakenError();
+        }
+        throw error;
+      }
 
       await tx.creditTransaction.create({
         data: {

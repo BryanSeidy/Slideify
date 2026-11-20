@@ -28,6 +28,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
         statusCode: status,
         code: typeof body === 'string' ? 'INTERNAL_ERROR' : body.code,
         message: typeof body === 'string' ? body : body.message,
+        // Champs de contexte autorisés (ex. activeGenerationId sur un 409).
+        ...(typeof body === 'string'
+          ? {}
+          : Object.fromEntries(
+              Object.entries(body).filter(
+                ([key]) => !['statusCode', 'code', 'message'].includes(key),
+              ),
+            )),
         timestamp: new Date().toISOString(),
         path: request.url,
       });
