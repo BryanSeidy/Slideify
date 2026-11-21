@@ -1,22 +1,21 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
 import { prisma } from '../packages/schema/src/prisma';
 
 describe('Database schema', () => {
   beforeAll(async () => {
-    // Use in-memory SQLite for tests (or mock)
-    process.env.DATABASE_URL = process.env.DATABASE_URL || 'sqlite::memory:';
+    process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://slideify:slideify_password@localhost:5432/slideify';
   });
 
-  it('prisma client can connect', async () => {
-    // Skip if no DB — schema validation only
+  it('prisma client can be instantiated', async () => {
     expect(prisma).toBeDefined();
   });
 
   it('schema has all required models', () => {
     expect(prisma.user).toBeDefined();
-    expect(prisma.credit).toBeDefined();
+    expect(prisma.creditTransaction).toBeDefined();
     expect(prisma.generation).toBeDefined();
+    expect(prisma.slide).toBeDefined();
     expect(prisma.output).toBeDefined();
+    expect(prisma.generationEvent).toBeDefined();
     expect(prisma.webhookEvent).toBeDefined();
   });
 });

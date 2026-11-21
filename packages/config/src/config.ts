@@ -14,6 +14,7 @@ export interface Config {
     password?: string;
   };
   llm: {
+    provider: 'mock' | 'openrouter';
     apiKey: string | undefined;
     model: string;
     siteUrl: string | undefined;
@@ -54,6 +55,7 @@ function buildConfig(): Config {
       password: env.REDIS_PASSWORD,
     },
     llm: {
+      provider: env.AI_PROVIDER,
       apiKey: env.OPENROUTER_API_KEY,
       model: env.OPENROUTER_MODEL,
       siteUrl: env.OPENROUTER_SITE_URL,

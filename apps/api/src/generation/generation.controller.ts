@@ -1,9 +1,22 @@
-import { Controller, Post, Body, Get, Param, UseGuards, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt.guard';
 import { GenerationService } from './generation.service';
-import { GenerationInput, countWords, LLMResponseSchema } from '@slideify/shared';
-import { z } from 'zod';
+import { countWords } from '@slideify/shared';
+import {
+  InputTooShortError,
+  InputTooLongError,
+  GenerationInProgressError,
+  NoCreditsError,
+} from '../common/errors/http-error';
 
 @ApiTags('generations')
 @Controller('generations')
@@ -13,60 +26,43 @@ export class GenerationController {
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @HttpCode(201)
   @ApiOperation({ summary: 'Create a new generation' })
   @ApiResponse({ status: 201, description: 'Generation created and queued' })
   @ApiResponse({ status: 400, description: 'Invalid input' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Generation already in progress' })
   @ApiResponse({ status: 402, description: 'No credits' })
+  @ApiResponse({ status: 409, description: 'Generation already in progress' })
   async create(
     @Body() body: { sourceText: string },
     @Req() req: { user: { userId: string } },
   ) {
-    // Validation mot-based (même fonction que le front, côté serveur)
-    const wordCount = countWords(body.sourceText);
+    const sourceText = body.sourceText ?? '';
+    const wordCount = countWords(sourceText);
+
     if (wordCount < 80) {
-      return {
-        statusCode: 400,
-        message: "Texte trop court — minimum 80 mots. Vous manquez de " + (80 - wordCount) + " mot(s).",
-        error: 'INPUT_TOO_SHORT',
-      };
+      throw new InputTooShortError(
+        `Texte trop court — minimum 80 mots. Vous manquez de ${
+          80 - wordCount
+        } mot(s).`,
+      );
     }
     if (wordCount > 3000) {
-      return {
-        statusCode: 400,
-        message: "Texte trop long — maximum 3000 mots. Vous en avez " + (wordCount - 3000) + " de trop.",
-        error: 'INPUT_TOO_LONG',
-      };
+      throw new InputTooLongError(
+        `Texte trop long — maximum 3000 mots. Vous en avez ${
+          wordCount - 3000
+        } de trop.`,
+      );
     }
 
-    // Vérifier qu'il n'y a pas déjà de génération en cours pour cet utilisateur
-    const hasInProgress = await this.generationService.hasInProgress(req.user.userId);
-    if (hasInProgress) {
-      return {
-        statusCode: 403,
-        message: "Une génération est déjà en cours.",
-        error: 'GENERATION_IN_PROGRESS',
-      };
-    }
-
-    // Vérifier le solde de crédits
-    const hasCredits = await this.generationService.hasCredits(req.user.userId);
-    if (!hasCredits) {
-      return {
-        statusCode: 402,
-        message: "Vous n'avez plus de crédits disponibles.",
-        error: 'NO_CREDITS',
-      };
-    }
-
-    // Création de la génération (passera en QUEUED via le worker)
-    await this.generationService.create(req.user.userId, body.sourceText);
+    // Le service vérifie hasInProgress et hasCredits dans un verrou sérialisé
+    const { generationId, status } = await this.generationService.create(
+      req.user.userId,
+      sourceText,
+    );
 
     return {
-      status: 'QUEUED',
-      generationId: '',
+      status,
+      generationId,
     };
   }
 

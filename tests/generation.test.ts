@@ -1,26 +1,34 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
-import { GenerationQueueService } from '../apps/api/src/generation/generation.service';
-import { PrismaService } from '../apps/api/src/prisma/prisma.service';
+import { countWords, GenerationJobSchema, GenerationInputSchema } from '../packages/shared/src/types';
 
-jest.mock('../apps/api/src/prisma/prisma.service');
+describe('Generation input contract (M004 §13)', () => {
+  const words = (n: number) => 'word '.repeat(n).trim();
 
-describe('GenerationQueueService', () => {
-  let service: GenerationQueueService;
-  let mockPrisma: any;
-
-  beforeEach(() => {
-    mockPrisma = {
-      generation: { update: jest.fn().mockResolvedValue({}), findUnique: jest.fn().mockResolvedValue({ user: { userId: 'user1' } }) },
-    };
-    service = new GenerationQueueService(mockPrisma);
+  it('79 words → rejected', () => {
+    expect(countWords(words(79))).toBe(79);
+    expect(GenerationInputSchema.safeParse({ sourceText: words(79) }).success).toBe(false);
   });
 
-  it('marks generation FAILED on LLM error', async () => {
-    jest.doRequire('@slideify/llm', { createLLMProvider: () => ({ generate: jest.fn().mockRejectedValue(new Error('LLM error')) }) });
-    const job = { data: { generationId: 'gen1', sourceText: 'test' } };
-    await service.process(job);
-    expect(mockPrisma.generation.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'gen1' }, data: { status: 'FAILED', error: 'LLM_ERROR' } })
-    );
+  it('80 words → accepted', () => {
+    expect(countWords(words(80))).toBe(80);
+    expect(GenerationInputSchema.safeParse({ sourceText: words(80) }).success).toBe(true);
+  });
+
+  it('3000 words → accepted', () => {
+    expect(GenerationInputSchema.safeParse({ sourceText: words(3000) }).success).toBe(true);
+  });
+
+  it('3001 words → rejected', () => {
+    expect(GenerationInputSchema.safeParse({ sourceText: words(3001) }).success).toBe(false);
+  });
+});
+
+describe('Generation job payload contract (M004 §24)', () => {
+  it('accepts { generationId } only', () => {
+    expect(GenerationJobSchema.safeParse({ generationId: 'gen_123' }).success).toBe(true);
+  });
+
+  it('rejects missing generationId', () => {
+    expect(GenerationJobSchema.safeParse({}).success).toBe(false);
+    expect(GenerationJobSchema.safeParse({ sourceText: 'leaked text' }).success).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 export default function ResultPage() {
   const params = useParams();
   const generationId = params.id as string;
-  const [slides, setSlides] = useState([]);
+  const [slides, setSlides] = useState<{ order: number; title: string; body: string }[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [loading, setLoading] = useState(true);
 

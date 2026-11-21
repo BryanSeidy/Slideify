@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 
 const MIN_WORDS = 80;
@@ -15,13 +15,13 @@ export default function GeneratePage() {
 
   const countWords = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     setText(value);
     setWordCount(countWords(value));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (wordCount < MIN_WORDS || wordCount > MAX_WORDS) return;
     if (credits <= 0) return;
@@ -34,7 +34,7 @@ export default function GeneratePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourceText: text }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as { generationId?: string };
       if (data.generationId) {
         router.push(`/generating/${data.generationId}`);
       }

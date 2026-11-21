@@ -1,35 +1,40 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 
 export function useAuth() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const router = useRouter();
+  const [user, setUser] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (userData) {
       setUser(JSON.parse(userData));
-      navigate('/dashboard');
+      router.push('/dashboard');
     } else {
       setLoading(false);
     }
-  }, [navigate]);
+  }, [router]);
 
   return { user, loading };
 }
 
 export function useCredits() {
-  const { data: userData } = useQuery({
-    queryKey: ['user'],
-    queryFn: async () => {
-      const res = await fetch('/api/user');
-      return res.json();
-    },
-    enabled: !!localStorage.getItem('user'),
-  });
-  return { credits: userData?.credits ?? 0 };
+  const [credits, setCredits] = useState(0);
+
+  useEffect(() => {
+    if (!localStorage.getItem('user')) return;
+    void fetch('/api/user')
+      .then(async (res) => {
+        const data = (await res.json()) as { credits?: number };
+        setCredits(data.credits ?? 0);
+      })
+      .catch(() => {
+        setCredits(0);
+      });
+  }, []);
+
+  return { credits };
 }

@@ -46,7 +46,7 @@ function escapeHtml(text: string): string {
 export async function renderSlides(slides: Slide[]): Promise<Buffer[]> {
   const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    headless: 'new',
+    headless: true,
   });
 
   try {
@@ -69,7 +69,7 @@ export async function renderSlides(slides: Slide[]): Promise<Buffer[]> {
 export async function renderPDF(slides: Slide[]): Promise<Buffer> {
   const browser = await puppeteer.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    headless: 'new',
+    headless: true,
   });
 
   try {

@@ -1,5 +1,10 @@
-import { StorageAdapter } from './index';
 import { config } from '@slideify/config';
+
+export interface StorageAdapter {
+  upload(key: string, buffer: Buffer, contentType: string): Promise<string>;
+  getSignedUrl(key: string, expiresInSeconds?: number): Promise<string>;
+  delete(key: string): Promise<void>;
+}
 
 export class LocalStorageAdapter implements StorageAdapter {
   private basePath: string;

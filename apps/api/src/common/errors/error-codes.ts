@@ -1,0 +1,33 @@
+/**
+ * Error codes — contrat D-19.
+ * Le front s'appuie sur `code`, jamais sur le texte. Statuts HTTP réels.
+ */
+export const ErrorCode = {
+  // Auth
+  INVALID_EMAIL: 'INVALID_EMAIL',
+  INVALID_PASSWORD: 'INVALID_PASSWORD',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  EMAIL_TAKEN: 'EMAIL_TAKEN',
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+
+  // Generation
+  INPUT_TOO_SHORT: 'INPUT_TOO_SHORT',
+  INPUT_TOO_LONG: 'INPUT_TOO_LONG',
+  NO_CREDITS: 'NO_CREDITS',
+  GENERATION_IN_PROGRESS: 'GENERATION_IN_PROGRESS',
+  NOT_FOUND: 'NOT_FOUND',
+
+  // Queue / infrastructure
+  QUEUE_UNAVAILABLE: 'QUEUE_UNAVAILABLE',
+  TRANSACTION_ERROR: 'TRANSACTION_ERROR',
+
+  // AI
+  INVALID_RESPONSE: 'INVALID_RESPONSE',
+  MALFORMED_OUTPUT: 'MALFORMED_OUTPUT',
+  TOO_MANY_SLIDES: 'TOO_MANY_SLIDES',
+
+  // Generic
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+} as const;
+
+export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@slideify/shared": [
+        "../shared/src"
+      ],
+      "@slideify/config": [
+        "../config/src"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ]
+}

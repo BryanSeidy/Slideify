@@ -1,0 +1,140 @@
+// Prisma schema for Slideify MVP
+// Defines all data models per architecture documentation
+// Credit system: append-only ledger (CreditTransaction)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  passwordHash       String              // bcrypt hash, never plaintext (M004.3)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  creditTransactions CreditTransaction[]
+  generations        Generation[]
+  events             GenerationEvent[]
+}
+
+model CreditTransaction {
+  id        String                @id @default(cuid())
+  userId    String
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int                   // positif = crédit, négatif = débit
+  type      CreditTransactionType
+  reference String                // generation:<generationId>, signup_bonus, stripe session id
+  metadata  Json?
+  createdAt DateTime              @default(now())
+
+  @@unique([userId, type, reference])
+  @@index([userId])
+  @@index([createdAt])
+  // CHECK constraints définies dans la migration 20251007_m007_p1_unique_active_generation
+}
+
+enum CreditTransactionType {
+  GENERATION_DEBIT
+  REFUND
+  MANUAL_GRANT
+  PROMO
+  ADJUSTMENT
+}
+
+model Generation {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceText  String           @db.Text
+  status      GenerationStatus @default(QUEUED)
+  slideCount  Int?
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  outputs     Output[]
+  slides      Slide[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  // Contrainte d'unicité partielle (migration SQL) : au plus une génération
+  // non terminale (QUEUED/PROCESSING_LLM/PROCESSING_RENDER) par utilisateur.
+  // Créée via 20251007_m007_p1_unique_active_generation/migration.sql
+}
+
+model Slide {
+  id           String     @id @default(cuid())
+  generationId String
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  order        Int
+  title        String     @db.VarChar(60)
+  body         String     @db.VarChar(220)
+  createdAt    DateTime   @default(now())
+
+  @@unique([generationId, order])
+  @@index([generationId])
+}
+
+enum GenerationStatus {
+  QUEUED
+  PROCESSING_LLM
+  PROCESSING_RENDER
+  COMPLETED
+  FAILED
+}
+
+model Output {
+  id           String       @id @default(cuid())
+  generationId String
+  generation   Generation   @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  format       OutputFormat
+  url          String
+  expiresAt    DateTime
+  size         Int
+  createdAt    DateTime     @default(now())
+
+  @@index([generationId])
+  @@index([expiresAt])
+}
+
+enum OutputFormat {
+  PNG
+  ZIP
+  PDF
+}
+
+model GenerationEvent {
+  id        String   @id @default(cuid())
+  name      String   // "user_activated", "first_generation_completed"
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([name])
+  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id            String    @id @default(cuid())
+  provider      String
+  eventId       String    // provider-side event id (Stripe event id) for idempotency
+  eventType     String
+  payload       Json
+  processed     Boolean   @default(false)
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([provider, eventId])
+  @@index([processed])
+}

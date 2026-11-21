@@ -11,12 +11,17 @@ const envSchema = z.object({
   REDIS_PORT: z.string().default('6379'),
   REDIS_PASSWORD: z.string().optional(),
 
+  // M006 D-09 : le mode IA est explicite. Le MVP n'a que le mock.
+  AI_PROVIDER: z.enum(['mock', 'openrouter']).default('mock'),
+
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_MODEL: z.string().default('openai/gpt-4o-mini'),
   OPENROUTER_SITE_URL: z.string().optional(),
   OPENROUTER_SITE_NAME: z.string().default('Slideify'),
 
-  AUTH_SECRET: z.string().min(1, 'AUTH_SECRET is required'),
+  AUTH_SECRET: z
+    .string()
+    .min(32, 'AUTH_SECRET doit contenir au moins 32 caractères'),
 
   STORAGE_ENDPOINT: z.string().optional(),
   STORAGE_BUCKET: z.string().optional(),

@@ -1,15 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+interface GenerationRow {
+  id: string;
+  createdAt: string;
+  status: string;
+  slideCount?: number;
+  error?: string;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [generations, setGenerations] = useState([]);
+  void router;
+  const [generations, setGenerations] = useState<GenerationRow[]>([]);
   const [credits, setCredits] = useState(3);
 
   // Fetch generations and credits on mount
-  React.useEffect(() => {
+  useEffect(() => {
     // In real app, fetch from API
     const mockGenerations = [
       { id: '1', createdAt: new Date().toISOString(), status: 'COMPLETED', slideCount: 7 },

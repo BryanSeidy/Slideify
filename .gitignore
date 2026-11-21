@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-pnpm-lock.yaml
 yarn-lock
 package-lock.lock
 
@@ -16,7 +15,6 @@ build/
 
 # Database
 *.sqlite
-prisma/
 sqlite/
 
 # Logs
