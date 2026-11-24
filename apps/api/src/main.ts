@@ -19,7 +19,7 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '100kb' }));
   app.use((err: any, req: any, res: any, next: any) => {
     if (res.headersSent) return next(err);
-    if (err?.type === 'entity.too.large') {
+    if (err?.status === 413 || err?.statusCode === 413 || err?.type === 'entity.too.large') {
       res.status(413).json({
         statusCode: 413,
         code: 'PAYLOAD_TOO_LARGE',
