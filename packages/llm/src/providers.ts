@@ -19,7 +19,27 @@ export class InvalidJSONResponseError extends Error {
 }
 
 export class MockProvider implements LLMProvider {
-  async generate(sourceText: string): Promise<LLMResponse> {
+  async generate(
+    sourceText: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<LLMResponse> {
+    const signal = options?.signal;
+
+    // Simuler un fournisseur qui ne résout jamais, pour tester l'AbortSignal.
+    if (process.env.NODE_ENV !== 'production' && sourceText.includes('__MOCK_NEVER_RESOLVES__')) {
+      return new Promise<LLMResponse>((_resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new Error('TIMEOUT'));
+          return;
+        }
+        signal?.addEventListener(
+          'abort',
+          () => reject(new Error('TIMEOUT')),
+          { once: true },
+        );
+      });
+    }
+
     // Simuler un timeout si le marqueur est présent
     if (process.env.NODE_ENV !== 'production' && sourceText.includes(MARKER_TIMEOUT)) {
       throw new Error('Simulated timeout');
