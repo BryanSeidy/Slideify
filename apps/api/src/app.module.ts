@@ -5,7 +5,6 @@ import { BullMQModule } from './bullmq/bullmq.module';
 import { GenerationModule } from './generation/generation.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health/health.controller';
-import { FallbackController } from './common/fallback.controller';
 
 @Module({
   imports: [
@@ -18,6 +17,6 @@ import { FallbackController } from './common/fallback.controller';
     AuthModule,
     GenerationModule,
   ],
-  controllers: [HealthController, FallbackController],
+  controllers: [HealthController],
 })
 export class AppModule {}
