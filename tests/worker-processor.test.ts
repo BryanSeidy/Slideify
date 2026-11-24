@@ -46,7 +46,7 @@ function makeFakeDb() {
       where,
       data,
     }: {
-      where: { id: string; status?: string | { in: string[] } };
+      where: { id: string; status?: string | { in: string[] }; startedAt?: Date | null };
       data: Partial<GenRow>;
     }) => {
       const g = generations.get(where.id);
@@ -58,6 +58,11 @@ function makeFakeDb() {
         !where.status.in.includes(g.status)
       ) {
         return { count: 0 };
+      }
+      if (where.startedAt !== undefined) {
+        const current = g.startedAt ? g.startedAt.getTime() : null;
+        const expected = where.startedAt ? where.startedAt.getTime() : null;
+        if (current !== expected) return { count: 0 };
       }
       Object.assign(g, data);
       return { count: 1 };
@@ -82,6 +87,8 @@ function makeFakeDb() {
   };
 
   const slide = {
+    count: async ({ where }: { where: { generationId: string } }) =>
+      (slides.get(where.generationId) ?? []).length,
     deleteMany: async ({ where }: { where: { generationId: string } }) => {
       slides.delete(where.generationId);
       return { count: 0 };
@@ -107,6 +114,14 @@ function makeFakeDb() {
   };
 
   const creditTransaction = {
+    findFirst: async ({ where }: { where: { userId?: string; type?: string; reference?: string } }) =>
+      debits.find(
+        (d) =>
+          (where.userId === undefined || d.userId === where.userId) &&
+          (where.type === undefined || d.type === where.type) &&
+          (where.reference === undefined || d.reference === where.reference),
+      ) ?? null,
+    aggregate: async () => ({ _sum: { amount: debits.reduce((s, d) => s + d.amount, 0) } }),
     create: async (args: { data: { userId: string; amount: number; type: string; reference: string } }) => {
       const d = args.data;
       if (debits.some((x) => x.userId === d.userId && x.type === d.type && x.reference === d.reference)) {
@@ -114,7 +129,7 @@ function makeFakeDb() {
           'Unique constraint failed on the fields: (`userId`,`type`,`reference`)',
         ) as Error & { code?: string; meta?: { target?: string[] } };
         err.code = 'P2002';
-        err.meta = { target: ['CreditTransaction_userId_type_reference_key'] };
+        err.meta = { target: ['userId', 'type', 'reference'] };
         throw err;
       }
       debits.push(d);
@@ -124,8 +139,41 @@ function makeFakeDb() {
 
   const generationEvent = {
     create: async ({ data }: { data: { name: string; actorId: string; metadata: unknown } }) => {
+      if (events.some((e) => e.actorId === data.actorId && e.name === data.name)) {
+        const err = new Error('Unique constraint failed on GenerationEvent(actorId, name)');
+        (err as { code?: string }).code = 'P2002';
+        (err as { meta?: unknown }).meta = { target: ['actorId', 'name'] };
+        throw err;
+      }
       events.push(data);
       return data;
+    },
+    createMany: async ({
+      data,
+      skipDuplicates,
+    }: {
+      data: Array<{ name: string; actorId: string; metadata: unknown }>;
+      skipDuplicates?: boolean;
+    }) => {
+      for (const row of data) {
+        if (
+          skipDuplicates &&
+          events.some((e) => e.actorId === row.actorId && e.name === row.name)
+        ) {
+          continue;
+        }
+        if (
+          !skipDuplicates &&
+          events.some((e) => e.actorId === row.actorId && e.name === row.name)
+        ) {
+          const err = new Error('Unique constraint failed on GenerationEvent(actorId, name)');
+          (err as { code?: string }).code = 'P2002';
+          (err as { meta?: unknown }).meta = { target: ['actorId', 'name'] };
+          throw err;
+        }
+        events.push(row);
+      }
+      return { count: data.length };
     },
   };
 
