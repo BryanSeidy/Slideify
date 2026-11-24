@@ -155,6 +155,9 @@ function makeFakePrisma() {
 
   const generationEvent = {
     create: async ({ data }: { data: { name: string; actorId: string; metadata: unknown } }) => ({ ...data }),
+    createMany: async ({ data }: { data: Array<{ name: string; actorId: string; metadata: unknown }> }) => ({
+      count: data.length,
+    }),
   };
 
   const fake = {

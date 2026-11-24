@@ -49,7 +49,10 @@ function makeDb() {
       return { count: list.length };
     },
   };
-  const generationEvent = { create: async ({ data }: { data: unknown }) => (events.push(data), data) };
+  const generationEvent = {
+    create: async ({ data }: { data: unknown }) => (events.push(data), data),
+    createMany: async ({ data }: { data: unknown[] }) => (events.push(...data), { count: data.length }),
+  };
   const api = {
     generation,
     creditTransaction,

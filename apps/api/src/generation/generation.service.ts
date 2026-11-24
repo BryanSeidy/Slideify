@@ -87,7 +87,9 @@ export class GenerationService implements GenerationServiceInterface {
     userId: string,
     sourceText: string,
   ): Promise<{ generationId: string; status: GenerationStatus }> {
-    const wordCount = countWords(sourceText ?? '');
+    const normalizedSourceText =
+      typeof sourceText === 'string' ? sourceText : '';
+    const wordCount = countWords(normalizedSourceText);
     if (wordCount < WORD_MIN) {
       throw new InputTooShortError(
         `Texte trop court — minimum ${WORD_MIN} mots. Vous manquez de ${
@@ -133,7 +135,7 @@ export class GenerationService implements GenerationServiceInterface {
         return await tx.generation.create({
           data: {
             userId,
-            sourceText,
+            sourceText: normalizedSourceText,
             status: GenerationStatus.QUEUED,
           },
         });
@@ -155,6 +157,12 @@ export class GenerationService implements GenerationServiceInterface {
 
     // Enfilage APRÈS commit : aucun job ne peut référencer une ligne
     // inexistante (rollback) ni bloquer la transaction PostgreSQL sur Redis.
+    //
+    // Un timeout de queue.add() n'est PAS une preuve de rejet : Redis peut
+    // avoir accepté le job pendant que la promesse n'était pas encore résolue.
+    // On ne marque FAILED que si la ligne est encore QUEUED. Si un worker l'a
+    // déjà réclamée/traitée, on renvoie un succès idempotent.
+    let enqueueError: unknown = null;
     try {
       await withTimeout(
         this.generationQueue.add(
@@ -169,8 +177,51 @@ export class GenerationService implements GenerationServiceInterface {
         QUEUE_ADD_TIMEOUT_MS,
         'queue.add timeout',
       );
-    } catch {
-      await this.markQueueUnavailable(generation.id);
+    } catch (error) {
+      enqueueError = error;
+    }
+
+    if (enqueueError !== null) {
+      // Un timeout n'est pas une preuve de rejet. Si Redis a effectivement
+      // accepté le job (jobId == generation.id), on ne doit jamais renvoyer
+      // 503 pour une génération encore exécutable.
+      let acceptedByRedis = false;
+      try {
+        const existingJob = await this.generationQueue.getJob(generation.id);
+        acceptedByRedis = existingJob !== null && existingJob !== undefined;
+      } catch {
+        acceptedByRedis = false;
+      }
+
+      if (acceptedByRedis) {
+        const current = await this.prisma.generation.findUnique({
+          where: { id: generation.id },
+          select: { status: true },
+        });
+        return {
+          generationId: generation.id,
+          status: (current?.status ?? GenerationStatus.QUEUED) as GenerationStatus,
+        };
+      }
+
+      const changed = await this.markQueueUnavailable(generation.id);
+      if (changed === 0) {
+        const current = await this.prisma.generation.findUnique({
+          where: { id: generation.id },
+          select: { status: true },
+        });
+        if (
+          current &&
+          (current.status === GenerationStatus.PROCESSING_LLM ||
+            current.status === GenerationStatus.PROCESSING_RENDER ||
+            current.status === GenerationStatus.COMPLETED)
+        ) {
+          return {
+            generationId: generation.id,
+            status: current.status as GenerationStatus,
+          };
+        }
+      }
       throw new QueueUnavailableError();
     }
 
@@ -180,15 +231,22 @@ export class GenerationService implements GenerationServiceInterface {
     };
   }
 
-  private async markQueueUnavailable(generationId: string): Promise<void> {
+  /**
+   * Tente de marquer la génération comme échec d'enfilage. Renvoie le nombre
+   * de lignes réellement passées de QUEUED à FAILED. Un compte à 0 signifie
+   * qu'un worker a pu réclamer/traiter la génération pendant l'incertitude.
+   */
+  private async markQueueUnavailable(generationId: string): Promise<number> {
     try {
-      await this.prisma.generation.updateMany({
+      const result = await this.prisma.generation.updateMany({
         where: { id: generationId, status: GenerationStatus.QUEUED },
         data: { status: GenerationStatus.FAILED, error: 'QUEUE_UNAVAILABLE' },
       });
+      return result.count;
     } catch (error) {
       // Le réconciliateur (5 min) reprendra la ligne si cette écriture échoue.
       console.error(`Unable to mark generation ${generationId} as QUEUE_UNAVAILABLE`, error);
+      return 0;
     }
   }
 

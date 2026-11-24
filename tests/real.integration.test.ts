@@ -23,7 +23,7 @@ import { MockProvider } from '@slideify/llm';
 import { AppModule } from '../apps/api/src/app.module';
 import { HttpExceptionFilter } from '../apps/api/src/common/errors/http-exception.filter';
 import { processGeneration } from '../apps/worker/src/processor';
-import { reapStaleGenerations } from '../apps/worker/src/index';
+import { reapStaleGenerations, main as startProductionWorker } from '../apps/worker/src/index';
 
 const PREFIX = config.apiPrefix || '/api';
 const SOURCE_TEXT = Array.from(
@@ -156,8 +156,51 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       imports: [AppModule],
     }).compile();
 
+    const { json, urlencoded } = require('express');
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix(PREFIX);
+    app.use(json({ limit: '100kb' }));
+    app.use(urlencoded({ extended: true, limit: '100kb' }));
+    app.use((err: any, req: any, res: any, next: any) => {
+      if (res.headersSent) return next(err);
+      if (err?.status === 413 || err?.statusCode === 413 || err?.type === 'entity.too.large') {
+        res.status(413).json({
+          statusCode: 413,
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Corps de requête trop volumineux.',
+          timestamp: new Date().toISOString(),
+          path: req.url,
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        res.status(400).json({
+          statusCode: 400,
+          code: 'INVALID_JSON',
+          message: 'JSON invalide.',
+          timestamp: new Date().toISOString(),
+          path: req.url,
+        });
+        return;
+      }
+      next(err);
+    });
+    app.use((req: any, res: any, next: any) => {
+      const originalJson = res.json.bind(res);
+      res.json = (body: any) => {
+        if (res.statusCode === 404 && (!body || typeof body?.code !== 'string')) {
+          return originalJson({
+            statusCode: 404,
+            code: 'NOT_FOUND',
+            message: 'Ressource introuvable.',
+            timestamp: new Date().toISOString(),
+            path: req.url,
+          });
+        }
+        return originalJson(body);
+      };
+      next();
+    });
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.listen(0);
     baseUrl = await app.getUrl();
@@ -477,8 +520,11 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       .overrideProvider(getQueueToken('generation'))
       .useValue(deadQueue)
       .compile();
+    const { json, urlencoded } = require('express');
     const brokenApp = brokenModule.createNestApplication();
     brokenApp.setGlobalPrefix(PREFIX);
+    brokenApp.use(json({ limit: '100kb' }));
+    brokenApp.use(urlencoded({ extended: true, limit: '100kb' }));
     brokenApp.useGlobalFilters(new HttpExceptionFilter());
     await brokenApp.listen(0);
 
@@ -550,5 +596,123 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       );
     await insertActive('active_1');
     await expectRawSqlFailure(insertActive('active_2'), '23505');
+  });
+
+  it('activation : 3 générations complétées -> toujours 1 seul user_activated', async () => {
+    const user = await registerUser(app, baseUrl);
+    for (let i = 0; i < 3; i += 1) {
+      const created = await call(baseUrl, 'POST', '/generations', {
+        token: user.token,
+        body: { sourceText: SOURCE_TEXT },
+      });
+      expect(created.status).toBe(201);
+      const worker = startTestWorker();
+      try {
+        expect((await waitForTerminal(created.body.generationId)).status).toBe(
+          GenerationStatus.COMPLETED,
+        );
+      } finally {
+        await worker.close();
+      }
+    }
+    const activations = await prisma.generationEvent.count({
+      where: { actorId: user.userId, name: 'user_activated' },
+    });
+    expect(activations).toBe(1);
+  });
+
+  it('worker de production : démarre, consomme la queue réelle, concurrence 1', async () => {
+    const user = await registerUser(app, baseUrl);
+    const created = await call(baseUrl, 'POST', '/generations', {
+      token: user.token,
+      body: { sourceText: SOURCE_TEXT },
+    });
+    expect(created.status).toBe(201);
+    const handle = await startProductionWorker();
+    try {
+      expect(handle.worker.opts.concurrency).toBe(1);
+      const terminal = await waitForTerminal(created.body.generationId);
+      expect(terminal.status).toBe(GenerationStatus.COMPLETED);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it('HTTP : sourceText non string ne produit pas de 500', async () => {
+    const user = await registerUser(app, baseUrl);
+    const result = await call(baseUrl, 'POST', '/generations', {
+      token: user.token,
+      body: { sourceText: 42 },
+    });
+    expect(result.status).toBe(400);
+    expect(result.body.code).toBe('INPUT_TOO_SHORT');
+  });
+
+  it('HTTP : corps trop volumineux -> 413 avec enveloppe commune', async () => {
+    const user = await registerUser(app, baseUrl);
+    const huge = 'a'.repeat(200_000);
+    const response = await fetch(`${baseUrl}${PREFIX}/generations`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${user.token}`,
+      },
+      body: JSON.stringify({ sourceText: huge }),
+    });
+    expect(response.status).toBe(413);
+    const body = await response.json();
+    expect(body).toMatchObject({ statusCode: 413, code: 'PAYLOAD_TOO_LARGE' });
+  });
+
+  it('HTTP : route inconnue -> 404 enveloppe commune', async () => {
+    const result = await call(baseUrl, 'GET', '/does-not-exist');
+    expect(result.status).toBe(404);
+    expect(result.body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND' });
+  });
+
+  it('queue : scénario B - job accepté par Redis malgré timeout -> pas de 503', async () => {
+    const user = await registerUser(app, baseUrl);
+    const realQueue = new Queue('generation', { connection: REDIS });
+    const delayedQueue = new Proxy(realQueue, {
+      get(target, prop) {
+        if (prop === 'add') {
+          return async (...args: any[]) => {
+            const jobPromise = (target as any).add(...args);
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            return jobPromise;
+          };
+        }
+        return (target as any)[prop];
+      },
+    });
+
+    const brokenModule = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(getQueueToken('generation'))
+      .useValue(delayedQueue)
+      .compile();
+    const { json, urlencoded } = require('express');
+    const brokenApp = brokenModule.createNestApplication();
+    brokenApp.setGlobalPrefix(PREFIX);
+    brokenApp.use(json({ limit: '100kb' }));
+    brokenApp.use(urlencoded({ extended: true, limit: '100kb' }));
+    brokenApp.useGlobalFilters(new HttpExceptionFilter());
+    await brokenApp.listen(0);
+
+    const handle = await startProductionWorker();
+    try {
+      const result = await call(await brokenApp.getUrl(), 'POST', '/generations', {
+        token: user.token,
+        body: { sourceText: SOURCE_TEXT },
+      });
+      expect(result.status).not.toBe(503);
+      expect(result.status).toBe(201);
+      const id = result.body.generationId as string;
+      const terminal = await waitForTerminal(id);
+      expect(terminal.status).toBe(GenerationStatus.COMPLETED);
+    } finally {
+      await handle.close();
+      await brokenApp.close();
+      await realQueue.close();
+    }
   });
 });

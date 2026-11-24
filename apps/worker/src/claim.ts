@@ -30,8 +30,8 @@ export interface ClaimRecord {
 export interface ClaimDb {
   generation: {
     updateMany(args: {
-      where: { id: string; status?: string };
-      data: { status: string; startedAt?: Date };
+      where: { id: string; status?: string | { in: string[] }; startedAt?: Date | null };
+      data: { status: string; startedAt?: Date | null };
     }): Promise<{ count: number }>;
     findUnique(args: { where: { id: string } }): Promise<ClaimRecord | null>;
   };
@@ -80,7 +80,7 @@ export async function acquireForProcessing(
 export async function resetForRetry(db: ClaimDb, generationId: string): Promise<boolean> {
   const reset = await db.generation.updateMany({
     where: { id: generationId, status: GenerationStatus.PROCESSING_LLM },
-    data: { status: GenerationStatus.QUEUED },
+    data: { status: GenerationStatus.QUEUED, startedAt: null },
   });
   return reset.count === 1;
 }

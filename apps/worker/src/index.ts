@@ -7,6 +7,12 @@ import { Logger } from './utils/logger';
 import { processGeneration } from './processor';
 import { MAX_ATTEMPTS } from './claim';
 
+export interface WorkerHandle {
+  worker: Worker;
+  queue: Queue;
+  close: () => Promise<void>;
+}
+
 /** D-18 : plafond absolu de 5 min entre création et état terminal. */
 export const ABSOLUTE_CEILING_MS = 5 * 60 * 1000;
 /** Réconciliateur : tourne chaque minute. */
@@ -65,8 +71,38 @@ export async function reapStaleGenerations(
 
 const logger = new Logger('worker');
 
-export async function main() {
+export async function reconcileQueuedGenerations(queue: Queue): Promise<number> {
+  const queued = await prisma.generation.findMany({
+    where: { status: GenerationStatus.QUEUED },
+    select: { id: true },
+  });
+
+  let enqueued = 0;
+  for (const generation of queued) {
+    try {
+      await queue.add(
+        'generation',
+        { generationId: generation.id },
+        { jobId: generation.id, attempts: MAX_ATTEMPTS, backoff: { type: 'exponential', delay: 2000 } },
+      );
+      enqueued += 1;
+    } catch (error) {
+      // A job with the same deterministic jobId already exists: idempotent.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/already exists|duplicate/i.test(message)) {
+        logger.error(`Unable to reconcile queued generation ${generation.id}`, error as Error);
+      }
+    }
+  }
+  return enqueued;
+}
+
+export async function main(): Promise<WorkerHandle> {
   logger.info('Starting Slideify generation worker (M004: structured slides only, no rendering)...');
+
+  // Fail before accepting jobs if a non-mock provider is configured but not
+  // implemented. Never silently fall back to mock.
+  const llmProvider = createLLMProvider();
 
   const connection = {
     host: config.redis.host,
@@ -84,6 +120,8 @@ export async function main() {
     },
   });
 
+  await reconcileQueuedGenerations(queue);
+
   const worker = new Worker(
     'generation',
     async (job) => {
@@ -98,9 +136,7 @@ export async function main() {
           ? job.opts.attempts
           : MAX_ATTEMPTS;
 
-      // processGeneration throws transient errors while retries remain so that
-      // BullMQ really redelivers; semantic errors end in FAILED without retry.
-      return processGeneration(prisma, createLLMProvider(), {
+      return processGeneration(prisma, llmProvider, {
         generationId: parsed.data.generationId,
         attemptsMade,
         maxAttempts,
@@ -124,24 +160,29 @@ export async function main() {
   const reaperInterval = setInterval(reaper, REAPER_INTERVAL_MS);
   const initialReaper = setTimeout(reaper, 5000);
 
-  const shutdown = async () => {
-    logger.info('Shutdown received, closing worker gracefully...');
+  const close = async () => {
     clearInterval(reaperInterval);
     clearTimeout(initialReaper);
     await worker.close();
     await queue.close();
     await prisma.$disconnect();
-    process.exit(0);
   };
-  process.on('SIGTERM', () => void shutdown());
-  process.on('SIGINT', () => void shutdown());
 
   logger.info('Worker connected to BullMQ queue (single consumer: apps/worker)');
+  return { worker, queue, close };
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    logger.error('Worker failed to start', error);
-    process.exit(1);
-  });
+  main()
+    .then((handle) => {
+      const shutdown = () => {
+        void handle.close().then(() => process.exit(0));
+      };
+      process.on('SIGTERM', shutdown);
+      process.on('SIGINT', shutdown);
+    })
+    .catch((error) => {
+      logger.error('Worker failed to start', error);
+      process.exit(1);
+    });
 }

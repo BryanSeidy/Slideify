@@ -36,7 +36,7 @@ export class GenerationController {
     @Body() body: { sourceText: string },
     @Req() req: { user: { userId: string } },
   ) {
-    const sourceText = body.sourceText ?? '';
+    const sourceText = typeof body?.sourceText === 'string' ? body.sourceText : '';
     const wordCount = countWords(sourceText);
 
     if (wordCount < 80) {

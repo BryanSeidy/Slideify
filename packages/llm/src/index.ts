@@ -3,7 +3,10 @@ import type { LLMResponse } from '@slideify/shared';
 export type { Slide, LLMResponse, GenerationJob } from '@slideify/shared';
 
 export interface LLMProvider {
-  generate(sourceText: string): Promise<LLMResponse>;
+  generate(
+    sourceText: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<LLMResponse>;
 }
 
 export interface LLMConfig {
