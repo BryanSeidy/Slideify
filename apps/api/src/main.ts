@@ -42,19 +42,24 @@ async function bootstrap() {
     next(err);
   });
 
-  app.useGlobalFilters(new HttpExceptionFilter());
-
-  await app.init();
   app.use((req: any, res: any, next: any) => {
-    if (res.headersSent) return next();
-    res.status(404).json({
-      statusCode: 404,
-      code: 'NOT_FOUND',
-      message: 'Ressource introuvable.',
-      timestamp: new Date().toISOString(),
-      path: req.url,
-    });
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      if (res.statusCode === 404 && (!body || typeof body?.code !== 'string')) {
+        return originalJson({
+          statusCode: 404,
+          code: 'NOT_FOUND',
+          message: 'Ressource introuvable.',
+          timestamp: new Date().toISOString(),
+          path: req.url,
+        });
+      }
+      return originalJson(body);
+    };
+    next();
   });
+
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   await app.listen(3001);
   logger.log(`API running on port 3001 (env: ${config.nodeEnv})`);
