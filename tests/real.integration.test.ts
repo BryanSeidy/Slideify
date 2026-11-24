@@ -156,8 +156,35 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       imports: [AppModule],
     }).compile();
 
+    const { json, urlencoded } = require('express');
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix(PREFIX);
+    app.use(json({ limit: '100kb' }));
+    app.use(urlencoded({ extended: true, limit: '100kb' }));
+    app.use((err: any, req: any, res: any, next: any) => {
+      if (res.headersSent) return next(err);
+      if (err?.status === 413 || err?.statusCode === 413 || err?.type === 'entity.too.large') {
+        res.status(413).json({
+          statusCode: 413,
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Corps de requête trop volumineux.',
+          timestamp: new Date().toISOString(),
+          path: req.url,
+        });
+        return;
+      }
+      if (err instanceof SyntaxError) {
+        res.status(400).json({
+          statusCode: 400,
+          code: 'INVALID_JSON',
+          message: 'JSON invalide.',
+          timestamp: new Date().toISOString(),
+          path: req.url,
+        });
+        return;
+      }
+      next(err);
+    });
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.listen(0);
     baseUrl = await app.getUrl();
@@ -477,8 +504,11 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       .overrideProvider(getQueueToken('generation'))
       .useValue(deadQueue)
       .compile();
+    const { json, urlencoded } = require('express');
     const brokenApp = brokenModule.createNestApplication();
     brokenApp.setGlobalPrefix(PREFIX);
+    brokenApp.use(json({ limit: '100kb' }));
+    brokenApp.use(urlencoded({ extended: true, limit: '100kb' }));
     brokenApp.useGlobalFilters(new HttpExceptionFilter());
     await brokenApp.listen(0);
 
@@ -644,8 +674,11 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
       .overrideProvider(getQueueToken('generation'))
       .useValue(delayedQueue)
       .compile();
+    const { json, urlencoded } = require('express');
     const brokenApp = brokenModule.createNestApplication();
     brokenApp.setGlobalPrefix(PREFIX);
+    brokenApp.use(json({ limit: '100kb' }));
+    brokenApp.use(urlencoded({ extended: true, limit: '100kb' }));
     brokenApp.useGlobalFilters(new HttpExceptionFilter());
     await brokenApp.listen(0);
 
