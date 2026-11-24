@@ -187,6 +187,16 @@ describe('M007 — intégration réelle PostgreSQL 16 + Redis 7 + Nest HTTP', ()
     });
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.listen(0);
+    app.use((req: any, res: any, next: any) => {
+      if (res.headersSent) return next();
+      res.status(404).json({
+        statusCode: 404,
+        code: 'NOT_FOUND',
+        message: 'Ressource introuvable.',
+        timestamp: new Date().toISOString(),
+        path: req.url,
+      });
+    });
     baseUrl = await app.getUrl();
 
     queue = new Queue('generation', { connection: REDIS });
